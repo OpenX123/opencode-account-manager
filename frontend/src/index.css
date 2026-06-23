@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* 暖奶油底 + 颗粒纸纹 + 顶部朱砂微光，告别纯色平铺 */
+  background-color: #f5f0e6;
+  background-image: var(--grain), radial-gradient(
+      120% 80% at 50% -10%,
+      rgba(207, 74, 38, 0.06),
+      transparent 55%
+    );
+  background-blend-mode: multiply, normal;
+  background-attachment: fixed;
+}
+
+/* 颗粒纹理层（内联 SVG 噪点，浅底上稍微提亮可见度） */
+:root {
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* 滚动条：细而暖 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #ddd5c2;
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c8bfa9;
+  background-clip: padding-box;
+}
+
+/* 选区颜色 */
+::selection {
+  background: rgba(207, 74, 38, 0.22);
+  color: #2a2620;
+}
+
+/* 动画曲线常量（与 tailwind.config 同步，避免 @apply 解析自定义曲线失败） */
+:root {
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer components {
+  /* 朱砂主按钮 */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold
+      transition-all duration-200;
+    background-color: #cf4a26;
+    color: #fbf8f0;
+    transition-timing-function: var(--ease-settle);
+  }
+  .btn-primary:hover {
+    background-color: #e2603a;
+  }
+  .btn-primary:active {
+    transform: translateY(1px);
+  }
+  .btn-primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  /* 描边按钮 */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm
+      transition-all duration-200;
+    border-color: #ddd5c2;
+    color: #6c6557;
+    transition-timing-function: var(--ease-settle);
+  }
+  .btn-ghost:hover {
+    border-color: #c8bfa9;
+    background-color: #f1ebdd;
+    color: #2a2620;
+  }
+
+  /* 图标按钮 */
+  .btn-icon {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md
+      transition-all duration-150;
+    color: #6c6557;
+    transition-timing-function: var(--ease-settle);
+  }
+  .btn-icon:hover {
+    background-color: #e7dfce;
+    color: #2a2620;
+  }
+
+  /* 字段输入 */
+  .field {
+    @apply w-full rounded-lg border px-3 py-2.5 text-sm transition-colors duration-150;
+    border-color: #ddd5c2;
+    background-color: #fbf8f0;
+    color: #2a2620;
+  }
+  .field::placeholder {
+    color: #9a9282;
+  }
+  .field:focus {
+    border-color: #cf4a26;
+    outline: none;
+    box-shadow: 0 0 0 1px rgba(207, 74, 38, 0.35);
+  }
+
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold uppercase;
+    letter-spacing: 0.18em;
+    color: #9a9282;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  /* 行悬停时的左侧朱砂高亮条 */
+  .row-hover {
+    @apply relative transition-all duration-200;
+    transition-timing-function: var(--ease-settle);
+  }
+  .row-hover::before {
+    content: "";
+    @apply absolute inset-y-0 left-0 w-[2px] origin-top scale-y-0
+      transition-transform duration-200;
+    background-color: #cf4a26;
+    transition-timing-function: var(--ease-overshoot);
+  }
+  .row-hover:hover::before {
+    @apply scale-y-100;
+  }
+}

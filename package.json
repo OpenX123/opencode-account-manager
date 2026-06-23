@@ -1,0 +1,63 @@
+{
+  "name": "opencode-account-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenCode 账号管理桌面版 — Cookie 导入、多账号切换、链式邀请",
+  "main": "electron/dist/main.js",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter ./backend dev\" \"pnpm --filter ./frontend dev\"",
+    "build": "pnpm --filter ./backend build && pnpm --filter ./frontend build",
+    "typecheck": "pnpm --filter '*' typecheck",
+    "electron:build-main": "tsc -p electron/tsconfig.json",
+    "electron:dev": "pnpm electron:build-main && concurrently -k -n backend,frontend,ewatch,electron \"pnpm --filter ./backend dev\" \"pnpm --filter ./frontend dev\" \"tsc -p electron/tsconfig.json --watch\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "pnpm --filter ./backend build && pnpm --filter ./frontend build && pnpm electron:build-main && node electron/copy-playwright.mjs && electron-builder --win"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "playwright": "^1.49.0",
+    "uuid": "^11.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.0",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.miaotools.opencode-account-manager",
+    "productName": "OpenCode 账号工坊",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/dist/**",
+      "backend/dist/**",
+      "backend/package.json",
+      "frontend/dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/build-assets/playwright-browsers",
+        "to": "playwright-browsers"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  }
+}

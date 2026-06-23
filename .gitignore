@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.db
+.DS_Store
+Thumbs.db
+
+# 构建产物
+electron/dist/
+electron/build-assets/
+release/
+
+# 用户数据（含加密 Cookie，切勿提交）
+data/
+
+# 日志 & 临时文件
+*.log
+*.tsbuildinfo
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
