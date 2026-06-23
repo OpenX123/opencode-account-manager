@@ -2,6 +2,8 @@
 
 OpenCode 账号管理桌面工具 — Cookie 导入、多账号切换、链式邀请、额度查询、自动领奖。
 
+> 🐧 灌水 QQ 群：**1060714372**
+
 ## 功能
 
 - **Cookie 导入** — 支持从浏览器剪贴板导入 OpenCode Cookie，自动验证有效性并加密存储
@@ -77,7 +79,6 @@ opencode-account-manager/
 │   │   └── hooks/         #   数据 hooks
 │   ├── vite.config.ts
 │   └── tailwind.config.js
-├── scripts/               # 辅助脚本（HAR 分析等，非核心功能）
 ├── package.json           # monorepo 根
 └── pnpm-workspace.yaml
 ```
@@ -87,6 +88,10 @@ opencode-account-manager/
 - 账号 Cookie 使用 **AES-256-GCM** 加密后存入 `%APPDATA%\opencode-account-manager\data\`
 - 加密密钥通过 `COOKIE_KEY` 环境变量派生，桌面版启动时生成随机密钥持久化到 `cookie.key`
 - 不连接任何外部服务器，所有数据纯本地
+
+## 友情链接
+
+[Linux DO](https://linux.do/) — 技术社区
 
 ## License
 
