@@ -2,7 +2,7 @@
 // API Client — 后端通信封装
 // ============================================================
 
-import type { AccountSummary, InviteLinkResult, RegistrationStatus } from "../types";
+import type { AccountSummary, InviteLinkResult, RegistrationStatus, AppSettings } from "../types";
 
 const BASE = "/api";
 
@@ -160,5 +160,22 @@ export function syncToSub2api(accountId: string): Promise<SyncResult> {
 export function syncAllToSub2api(): Promise<{ results: SyncResult[] }> {
   return request<{ results: SyncResult[] }>("/invite/sync-sub2api-batch", {
     method: "POST",
+  });
+}
+
+export function testSub2api(): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>("/invite/test-sub2api", {
+    method: "POST",
+  });
+}
+
+export function getSettings(): Promise<AppSettings> {
+  return request<AppSettings>("/settings");
+}
+
+export function saveSettings(settings: AppSettings): Promise<AppSettings> {
+  return request<AppSettings>("/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
   });
 }

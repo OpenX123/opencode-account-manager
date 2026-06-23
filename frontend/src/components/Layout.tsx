@@ -3,12 +3,13 @@
 // ============================================================
 
 import type { ReactNode } from "react";
-import { IconUpload, IconLink, IconRefresh } from "./icons";
+import { IconUpload, IconLink, IconRefresh, IconSettings } from "./icons";
 
 interface Props {
   onImportClick: () => void;
   onInviteClick: () => void;
   onRefresh: () => void;
+  onSettingsClick: () => void;
   children: ReactNode;
 }
 
@@ -16,6 +17,7 @@ export default function Layout({
   onImportClick,
   onInviteClick,
   onRefresh,
+  onSettingsClick,
   children,
 }: Props) {
   return (
@@ -44,7 +46,7 @@ export default function Layout({
           </button>
         </nav>
 
-        {/* 底部刷新 + 脚注 */}
+        {/* 底部刷新 + 配置 + 脚注 */}
         <div className="mt-auto flex flex-col gap-4">
           <button
             onClick={onRefresh}
@@ -53,6 +55,14 @@ export default function Layout({
           >
             <IconRefresh width={15} height={15} />
             刷新
+          </button>
+          <button
+            onClick={onSettingsClick}
+            className="btn-ghost justify-start text-xs"
+            title="sub2api 配置"
+          >
+            <IconSettings width={15} height={15} />
+            配置
           </button>
           <div className="border-t border-ink-700/70 pt-4 font-mono text-[10px] leading-relaxed text-paper-faint">
             本地存储 · AES-256

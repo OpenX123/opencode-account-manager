@@ -11,7 +11,7 @@ import {
 } from "../services/registration-monitor.js";
 import { claimReward } from "../services/reward-claimer.js";
 import { checkUsage } from "../services/usage-checker.js";
-import { syncToSub2api } from "../services/sub2api-sync.js";
+import { syncToSub2api, testSub2apiConnection } from "../services/sub2api-sync.js";
 import type { SyncResult } from "../services/sub2api-sync.js";
 import type { UsageResult } from "../services/usage-checker.js";
 
@@ -204,6 +204,21 @@ inviteRouter.post(
       res
         .status(500)
         .json({ error: `批量同步失败: ${(err as Error).message}` });
+    }
+  }
+);
+
+// POST /api/invite/test-sub2api — 测试 sub2api SSH 连通性
+inviteRouter.post(
+  "/test-sub2api",
+  async (_req: Request, res: Response) => {
+    try {
+      const result = await testSub2apiConnection();
+      res.json(result);
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: `测试失败: ${(err as Error).message}` });
     }
   }
 );

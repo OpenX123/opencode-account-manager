@@ -11,6 +11,7 @@ import path from "node:path";
 import { accountsRouter } from "./routes/accounts.js";
 import { browserRouter } from "./routes/browser.js";
 import { inviteRouter } from "./routes/invite.js";
+import { settingsRouter } from "./routes/settings.js";
 
 export interface StartServerOptions {
   /** 监听端口，0 表示随机空闲端口 */
@@ -45,6 +46,7 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartedServe
   app.use("/api/accounts", accountsRouter);
   app.use("/api/browser", browserRouter);
   app.use("/api/invite", inviteRouter);
+  app.use("/api/settings", settingsRouter);
 
   // --- 健康检查 ---
   app.get("/api/health", (_req, res) => {

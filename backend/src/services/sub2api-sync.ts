@@ -13,6 +13,7 @@
 import { execFile } from "node:child_process";
 import { decrypt } from "../utils/crypto.js";
 import { getAccountById } from "./account-store.js";
+import { getSub2ApiSettings, type Sub2ApiSettings } from "./settings-store.js";
 import type { Account, Cookie } from "../types.js";
 
 export interface SyncResult {
@@ -24,23 +25,6 @@ export interface SyncResult {
   sub2apiId?: number;
   sub2apiName?: string;
 }
-
-// --- 固定配置 ---
-const GROUP_ID = 9;
-const GROUP_NAME = "OPENCODE-GO";
-const PLATFORM = "openai";
-const BASE_URL = "https://opencode.ai/zen/go/v1";
-const DEFAULT_CONCURRENCY = 2;
-const DEFAULT_PRIORITY = 50;
-
-// --- SSH 配置 ---
-const SSH_HOST = "186.241.77.41";
-const SSH_PORT = "22";
-const SSH_USER = "root";
-const SSH_KEY = "C:\\Users\\qingfeng\\.ssh\\opencode_remote_key";
-const DOCKER_CONTAINER = "sub2api-postgres";
-const DB_USER = "sub2api";
-const DB_NAME = "sub2api";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
@@ -61,16 +45,16 @@ function decryptCookies(account: Account): Cookie[] {
  * 通过 SSH 执行 psql SQL 语句。
  * 用 stdin 管道传 SQL，避免 shell 转义问题。
  */
-function execSql(sql: string): Promise<string> {
+function execSql(sql: string, cfg: Sub2ApiSettings): Promise<string> {
   return new Promise((resolve, reject) => {
     const args = [
       "-o", "ConnectTimeout=15",
       "-o", "StrictHostKeyChecking=no",
       "-o", "BatchMode=yes",
-      "-i", SSH_KEY,
-      "-p", SSH_PORT,
-      `${SSH_USER}@${SSH_HOST}`,
-      `docker exec -i ${DOCKER_CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -t -A`,
+      "-i", cfg.sshKey,
+      "-p", cfg.sshPort,
+      `${cfg.sshUser}@${cfg.sshHost}`,
+      `docker exec -i ${cfg.dockerContainer} psql -U ${cfg.dbUser} -d ${cfg.dbName} -t -A`,
     ];
 
     const proc = execFile("ssh", args, {
@@ -106,9 +90,9 @@ function execSql(sql: string): Promise<string> {
  * 从远程数据库查下一个可用的序号。
  * 查找已存在的 opencode-go-NN 中最大 NN。
  */
-async function getNextSequence(): Promise<number> {
+async function getNextSequence(cfg: Sub2ApiSettings): Promise<number> {
   const sql = `SELECT COALESCE(MAX(SUBSTRING(name FROM 'opencode-go-([0-9]+)')::int), 0) FROM accounts WHERE name LIKE 'opencode-go%';`;
-  const result = await execSql(sql);
+  const result = await execSql(sql, cfg);
   const max = parseInt(result.trim(), 10);
   return isNaN(max) ? 1 : max + 1;
 }
@@ -117,9 +101,9 @@ async function getNextSequence(): Promise<number> {
  * 检查账号是否已存在（按 API key 去重）。
  * 返回已存在的 account id，或 null。
  */
-async function findExistingByKey(apiKey: string): Promise<number | null> {
+async function findExistingByKey(apiKey: string, cfg: Sub2ApiSettings): Promise<number | null> {
   const sql = `SELECT id FROM accounts WHERE credentials->>'api_key' = '${apiKey.replace(/'/g, "''")}' AND deleted_at IS NULL LIMIT 1;`;
-  const result = await execSql(sql);
+  const result = await execSql(sql, cfg);
   const trimmed = result.trim();
   if (!trimmed) return null;
   const id = parseInt(trimmed, 10);
@@ -129,21 +113,20 @@ async function findExistingByKey(apiKey: string): Promise<number | null> {
 /**
  * 检查账号是否已在分组中。
  */
-async function isAlreadyInGroup(accountId: number): Promise<boolean> {
-  const sql = `SELECT 1 FROM account_groups WHERE account_id = ${accountId} AND group_id = ${GROUP_ID} LIMIT 1;`;
-  const result = await execSql(sql);
+async function isAlreadyInGroup(accountId: number, cfg: Sub2ApiSettings): Promise<boolean> {
+  const sql = `SELECT 1 FROM account_groups WHERE account_id = ${accountId} AND group_id = ${cfg.groupId} LIMIT 1;`;
+  const result = await execSql(sql, cfg);
   return result.trim().length > 0;
 }
 
 /**
  * 插入新账号到 accounts 表，返回新 id。
  */
-async function insertAccount(name: string, apiKey: string): Promise<number> {
-  const credentials = JSON.stringify({ api_key: apiKey, base_url: BASE_URL });
-  // 转义 JSON 中的单引号
+async function insertAccount(name: string, apiKey: string, cfg: Sub2ApiSettings): Promise<number> {
+  const credentials = JSON.stringify({ api_key: apiKey, base_url: cfg.baseUrl });
   const escapedCreds = credentials.replace(/'/g, "''");
-  const sql = `INSERT INTO accounts (name, platform, type, credentials, concurrency, priority, schedulable) VALUES ('${name}', '${PLATFORM}', '${PLATFORM}', '${escapedCreds}'::jsonb, ${DEFAULT_CONCURRENCY}, ${DEFAULT_PRIORITY}, true) RETURNING id;`;
-  const result = await execSql(sql);
+  const sql = `INSERT INTO accounts (name, platform, type, credentials, concurrency, priority, schedulable) VALUES ('${name}', '${cfg.platform}', '${cfg.platform}', '${escapedCreds}'::jsonb, ${cfg.defaultConcurrency}, ${cfg.defaultPriority}, true) RETURNING id;`;
+  const result = await execSql(sql, cfg);
   const id = parseInt(result.trim(), 10);
   if (isNaN(id)) throw new Error("插入账号后未返回有效 id");
   return id;
@@ -152,9 +135,9 @@ async function insertAccount(name: string, apiKey: string): Promise<number> {
 /**
  * 关联账号到分组。
  */
-async function linkToGroup(accountId: number, priority: number): Promise<void> {
-  const sql = `INSERT INTO account_groups (account_id, group_id, priority) VALUES (${accountId}, ${GROUP_ID}, ${priority}) ON CONFLICT DO NOTHING;`;
-  await execSql(sql);
+async function linkToGroup(accountId: number, priority: number, cfg: Sub2ApiSettings): Promise<void> {
+  const sql = `INSERT INTO account_groups (account_id, group_id, priority) VALUES (${accountId}, ${cfg.groupId}, ${priority}) ON CONFLICT DO NOTHING;`;
+  await execSql(sql, cfg);
 }
 
 /**
@@ -204,6 +187,8 @@ export async function syncToSub2api(accountId: string): Promise<SyncResult> {
   const account = getAccountById(accountId);
   if (!account) throw new Error(`账号不存在: ${accountId}`);
 
+  const cfg = getSub2ApiSettings();
+
   const cookies = decryptCookies(account);
   const cookieHeader = cookiesToString(cookies);
 
@@ -229,48 +214,65 @@ export async function syncToSub2api(accountId: string): Promise<SyncResult> {
   }
 
   // 第 3 步：检查 sub2api 中是否已存在相同 key
-  const existingId = await findExistingByKey(apiKey);
+  const existingId = await findExistingByKey(apiKey, cfg);
 
   if (existingId) {
-    // 已存在，检查是否在分组中
-    const inGroup = await isAlreadyInGroup(existingId);
+    const inGroup = await isAlreadyInGroup(existingId, cfg);
     if (inGroup) {
       return {
         accountId,
         alias: account.alias,
         success: true,
-        message: `已存在且在 ${GROUP_NAME} 分组中（ID: ${existingId}）`,
+        message: `已存在且在 ${cfg.groupName} 分组中（ID: ${existingId}）`,
         apiKey,
         sub2apiId: existingId,
       };
     }
-    // 不在分组中，加进去
-    await linkToGroup(existingId, DEFAULT_PRIORITY);
+    await linkToGroup(existingId, cfg.defaultPriority, cfg);
     return {
       accountId,
       alias: account.alias,
       success: true,
-      message: `已关联到 ${GROUP_NAME} 分组（现有账号 ID: ${existingId}）`,
+      message: `已关联到 ${cfg.groupName} 分组（现有账号 ID: ${existingId}）`,
       apiKey,
       sub2apiId: existingId,
     };
   }
 
   // 第 4 步：插入新账号
-  const seq = await getNextSequence();
+  const seq = await getNextSequence(cfg);
   const name = `opencode-go-${String(seq).padStart(2, "0")}`;
-  const newId = await insertAccount(name, apiKey);
+  const newId = await insertAccount(name, apiKey, cfg);
 
   // 第 5 步：关联到分组
-  await linkToGroup(newId, DEFAULT_PRIORITY);
+  await linkToGroup(newId, cfg.defaultPriority, cfg);
 
   return {
     accountId,
     alias: account.alias,
     success: true,
-    message: `已添加 ${name}（ID: ${newId}）到 ${GROUP_NAME} 分组`,
+    message: `已添加 ${name}（ID: ${newId}）到 ${cfg.groupName} 分组`,
     apiKey,
     sub2apiId: newId,
     sub2apiName: name,
   };
+}
+
+/**
+ * 测试 sub2api SSH 连通性
+ */
+export async function testSub2apiConnection(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const cfg = getSub2ApiSettings();
+  try {
+    const result = await execSql("SELECT 1;", cfg);
+    if (result.trim() === "1") {
+      return { success: true, message: "连接成功" };
+    }
+    return { success: false, message: `返回异常: ${result.trim()}` };
+  } catch (err) {
+    return { success: false, message: (err as Error).message };
+  }
 }

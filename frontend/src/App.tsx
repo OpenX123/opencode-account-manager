@@ -8,6 +8,7 @@ import Layout from "./components/Layout";
 import AccountList from "./components/AccountList";
 import CookieImporter from "./components/CookieImporter";
 import InviteChainPanel from "./components/InviteChainPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import { useAccounts } from "./hooks/useAccounts";
 import { IconKey } from "./components/icons";
 
@@ -17,6 +18,7 @@ export default function App() {
 
   const [showImporter, setShowImporter] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const validCount = accounts.filter((a) => a.hasCookies).length;
   const invitedCount = accounts.filter((a) => a.invitedBy).length;
@@ -27,6 +29,7 @@ export default function App() {
         onImportClick={() => setShowImporter(true)}
         onInviteClick={() => setShowInvite(true)}
         onRefresh={refresh}
+        onSettingsClick={() => setShowSettings(true)}
       >
         {/* 编辑式标题区：左对齐、衬线斜体、口语化文案 */}
         <header className="mb-8 max-w-3xl animate-slide-up">
@@ -103,6 +106,9 @@ export default function App() {
             onAccountCreated={refresh}
           />
         )}
+
+        {/* sub2api 配置面板 */}
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       </Layout>
     </ToastProvider>
   );

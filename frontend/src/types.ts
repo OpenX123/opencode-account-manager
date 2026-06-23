@@ -34,3 +34,23 @@ export interface RegistrationStatus {
   startedAt: number;
   completedAt: number | null;
 }
+
+export interface Sub2ApiSettings {
+  groupId: number;
+  groupName: string;
+  platform: string;
+  baseUrl: string;
+  defaultConcurrency: number;
+  defaultPriority: number;
+  sshHost: string;
+  sshPort: string;
+  sshUser: string;
+  sshKey: string;
+  dockerContainer: string;
+  dbUser: string;
+  dbName: string;
+}
+
+export interface AppSettings {
+  sub2api: Sub2ApiSettings;
+}
