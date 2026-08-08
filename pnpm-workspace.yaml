@@ -2,6 +2,10 @@ packages:
   - "backend"
   - "frontend"
 
+allowBuilds:
+  electron: true
+  esbuild: true
+
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild

@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:web-auth": "tsx src/services/web-auth.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

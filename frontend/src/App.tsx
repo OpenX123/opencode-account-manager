@@ -2,21 +2,44 @@
 // App — 根组件，组合所有模块
 // ============================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ToastProvider } from "./components/Toast";
 import Layout from "./components/Layout";
 import AccountList from "./components/AccountList";
 import CookieImporter from "./components/CookieImporter";
 import InviteChainPanel from "./components/InviteChainPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import OAuthLoginPanel from "./components/OAuthLoginPanel";
 import { useAccounts } from "./hooks/useAccounts";
 import { IconKey } from "./components/icons";
+import LoginScreen from "./components/LoginScreen";
+import { getAuthStatus } from "./api/client";
 
 export default function App() {
+  const webMode = import.meta.env.VITE_WEB_MODE === "1";
+  const [authenticated, setAuthenticated] = useState(!webMode);
+  const [checkingAuth, setCheckingAuth] = useState(webMode);
+
+  useEffect(() => {
+    if (!webMode) return;
+    getAuthStatus()
+      .then((result) => setAuthenticated(result.authenticated))
+      .catch(() => setAuthenticated(false))
+      .finally(() => setCheckingAuth(false));
+  }, [webMode]);
+
+  if (checkingAuth) return null;
+  if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  return <AccountManager />;
+}
+
+function AccountManager() {
+  const webMode = import.meta.env.VITE_WEB_MODE === "1";
   const { accounts, loading, error, refresh, importAccount, removeAccount } =
     useAccounts();
 
   const [showImporter, setShowImporter] = useState(false);
+  const [showOAuthLogin, setShowOAuthLogin] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -26,22 +49,13 @@ export default function App() {
   return (
     <ToastProvider>
       <Layout
+        webMode={webMode}
+        onOAuthClick={() => setShowOAuthLogin(true)}
         onImportClick={() => setShowImporter(true)}
         onInviteClick={() => setShowInvite(true)}
         onRefresh={refresh}
         onSettingsClick={() => setShowSettings(true)}
       >
-        {/* 编辑式标题区：左对齐、衬线斜体、口语化文案 */}
-        <header className="mb-8 max-w-3xl animate-slide-up">
-          <h1 className="font-display text-4xl leading-[1.1] tracking-tightish text-paper md:text-5xl">
-            你的账号，<span className="italic text-cinnabar">一把抓</span>在手里。
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-paper-muted">
-            导入 Cookie 就能秒切账号，邀请链接一键生成供你手动注册。
-            全程本地加密，不上传任何凭证。
-          </p>
-        </header>
-
         {/* 内联账本条：一句话式统计，告别三卡片 */}
         {!loading && accounts.length > 0 && (
           <div className="mb-6 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-y border-ink-700/50 py-3 font-mono text-xs animate-fade-in">
@@ -95,6 +109,13 @@ export default function App() {
               return result;
             }}
             onClose={() => setShowImporter(false)}
+          />
+        )}
+
+        {showOAuthLogin && (
+          <OAuthLoginPanel
+            onClose={() => setShowOAuthLogin(false)}
+            onAccountCreated={refresh}
           />
         )}
 

@@ -37,6 +37,14 @@ export interface Account {
   note: string;
   /** 邀请来源账号 ID */
   invitedBy: string | null;
+  /** AES-256-GCM 加密后的 OpenCode API Key（按需获取并缓存） */
+  encryptedApiKey?: string;
+  /** API Key 独立加密 IV */
+  apiKeyIv?: string;
+  /** API Key 独立加密 auth tag */
+  apiKeyAuthTag?: string;
+  /** API Key 最后从官方刷新时间 */
+  apiKeyUpdatedAt?: number;
 }
 
 /** 创建账号的输入 */

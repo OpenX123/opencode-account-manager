@@ -2,10 +2,10 @@
 // /api/settings 路由 — sub2api 等配置的读写
 // ============================================================
 
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type Router as RouterType } from "express";
 import { getSettings, saveSettings } from "../services/settings-store.js";
 
-export const settingsRouter = Router();
+export const settingsRouter: RouterType = Router();
 
 // GET /api/settings — 获取当前配置
 settingsRouter.get("/", (_req: Request, res: Response) => {

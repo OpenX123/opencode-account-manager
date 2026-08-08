@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew OpenCode Account Manager IP certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+OnCalendar=*-*-* 15:17:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

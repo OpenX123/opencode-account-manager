@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew OpenCode Account Manager IP certificate
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/renew-ocam-ip-certificate
