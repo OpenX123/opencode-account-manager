@@ -24,7 +24,8 @@ let browser: Browser | null = null;
 export async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
     browser = await chromium.launch({
-      headless: false,
+      headless: process.env.WEB_MODE === "1" && process.env.REMOTE_BROWSER !== "1",
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -243,7 +244,7 @@ export async function verifyCookies(
 /**
  * 从已登录页面提取用户信息
  */
-async function extractSessionInfo(
+export async function extractSessionInfo(
   page: Page
 ): Promise<SessionInfo> {
   const selectors = {

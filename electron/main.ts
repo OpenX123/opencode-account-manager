@@ -4,7 +4,16 @@
 // 打包模式：内嵌启动后端 + 静态托管前端，加载 http://localhost:{port}
 // ============================================================
 
-import { app, BrowserWindow, shell, dialog, Menu } from "electron";
+import {
+  app,
+  BrowserWindow,
+  shell,
+  dialog,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  type NativeImage,
+} from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -23,6 +32,17 @@ function log(msg: string): void {
 const isPackaged = app.isPackaged;
 // 开发模式：加载 Vite Dev Server；FORCE_PROD=1 可在未打包时测试生产路径
 const useDevServer = !isPackaged && process.env.FORCE_PROD !== "1";
+
+function createAppIcon(): NativeImage {
+  const variant = nativeTheme.shouldUseDarkColors ? "dark" : "light";
+  const iconPath = appFile(
+    "electron",
+    "build-assets",
+    "icons",
+    `opencode-logo-${variant}.png`
+  );
+  return nativeImage.createFromPath(iconPath);
+}
 
 // --- 资源路径解析（打包后 app.getAppPath() 指向 resources/app） ---
 function appFile(...segments: string[]): string {
@@ -127,6 +147,8 @@ function startEmbeddedBackend(): Promise<number> {
 let mainWindow: BrowserWindow | null = null;
 
 async function createWindow() {
+  const appIcon = createAppIcon();
+  log(`app icon: ${appIcon.getSize().width}x${appIcon.getSize().height}, empty=${appIcon.isEmpty()}`);
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 880,
@@ -134,6 +156,7 @@ async function createWindow() {
     minHeight: 640,
     backgroundColor: "#0c0c0d",
     title: "OpenCode 账号工坊",
+    icon: appIcon,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

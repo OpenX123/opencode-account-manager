@@ -12,6 +12,7 @@ import { accountsRouter } from "./routes/accounts.js";
 import { browserRouter } from "./routes/browser.js";
 import { inviteRouter } from "./routes/invite.js";
 import { settingsRouter } from "./routes/settings.js";
+import { assertWebAuthConfig, authRouter, requireWebAuth } from "./routes/auth.js";
 
 export interface StartServerOptions {
   /** 监听端口，0 表示随机空闲端口 */
@@ -28,9 +29,11 @@ export interface StartedServer {
 
 /** 构建并启动 Express 应用，返回实际监听端口与关闭函数 */
 export function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
+  assertWebAuthConfig();
   const port = opts.port ?? 0;
 
   const app = express();
+  app.set("trust proxy", 1);
 
   app.use(
     cors({
@@ -41,6 +44,19 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartedServe
     })
   );
   app.use(express.json({ limit: "1mb" }));
+  app.use((_req, res, next) => {
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: Date.now() });
+  });
+  app.use("/api/auth", authRouter);
+  app.use("/api", requireWebAuth);
+  app.get("/api/auth/check", (_req, res) => res.sendStatus(204));
 
   // --- REST API 路由 ---
   app.use("/api/accounts", accountsRouter);
@@ -49,10 +65,6 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartedServe
   app.use("/api/settings", settingsRouter);
 
   // --- 健康检查 ---
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: Date.now() });
-  });
-
   // --- 静态托管前端（打包模式） ---
   if (opts.frontendDist) {
     app.use(express.static(opts.frontendDist));

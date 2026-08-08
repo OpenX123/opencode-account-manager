@@ -6,13 +6,18 @@ import { useState, useEffect, useRef } from "react";
 import type { AccountSummary } from "../types";
 import { useToast } from "./Toast";
 import * as api from "../api/client";
-import type { UsageResult, UsageWindow, SyncResult } from "../api/client";
+import type { UsageResult, UsageWindow, SyncResult, ApiKeyResult } from "../api/client";
+import AccountDetailsPanel from "./AccountDetailsPanel";
 import {
-  IconExternal,
-  IconCard,
   IconTrash,
   IconGift,
   IconSync,
+  IconRadar,
+  IconKey,
+  IconEye,
+  IconEyeOff,
+  IconCopy,
+  IconRefresh,
 } from "./icons";
 
 interface Props {
@@ -78,6 +83,10 @@ export default function AccountList({
   const [usageLoading, setUsageLoading] = useState(false);
   const [syncLoadingId, setSyncLoadingId] = useState<string | null>(null);
   const [syncMap, setSyncMap] = useState<Record<string, SyncResult>>({});
+  const [detailsAccount, setDetailsAccount] = useState<AccountSummary | null>(null);
+  const [keyLoadingId, setKeyLoadingId] = useState<string | null>(null);
+  const [keyMap, setKeyMap] = useState<Record<string, ApiKeyResult>>({});
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 自动批量查询额度
@@ -114,21 +123,29 @@ export default function AccountList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts.length]);
 
-  const handleOpen = async (account: AccountSummary) => {
+  const handleGetKey = async (account: AccountSummary, refresh = false) => {
+    setKeyLoadingId(account.id);
     try {
-      await api.openAccount(account.id);
-      toast(`已为「${account.alias}」打开浏览器窗口`, "success");
+      const result = await api.getApiKey(account.id, refresh);
+      setKeyMap((prev) => ({ ...prev, [account.id]: result }));
+      setVisibleKeys((prev) => ({ ...prev, [account.id]: true }));
+      toast(
+        refresh ? `「${account.alias}」API Key 已从官方刷新` : `「${account.alias}」API Key 已获取`,
+        "success"
+      );
     } catch (err) {
-      toast(`打开失败: ${(err as Error).message}`, "error");
+      toast(`获取 Key 失败: ${(err as Error).message}`, "error");
+    } finally {
+      setKeyLoadingId(null);
     }
   };
 
-  const handleBilling = async (account: AccountSummary) => {
+  const handleCopyKey = async (account: AccountSummary, apiKey: string) => {
     try {
-      const result = await api.openBilling(account.id);
-      toast(`已打开付费页 ${result.url}`, "success");
-    } catch (err) {
-      toast(`打开失败: ${(err as Error).message}`, "error");
+      await navigator.clipboard.writeText(apiKey);
+      toast(`「${account.alias}」API Key 已复制`, "success");
+    } catch {
+      toast("复制失败，请手动选择 Key", "error");
     }
   };
 
@@ -212,6 +229,7 @@ export default function AccountList({
         {accounts.map((account, i) => {
           const usage = usageMap[account.id];
           const sync = syncMap[account.id];
+          const keyResult = keyMap[account.id];
           return (
           <div
             key={account.id}
@@ -269,18 +287,23 @@ export default function AccountList({
             {/* 操作图标组 */}
             <div className="flex items-center justify-start gap-1 md:justify-end">
               <button
-                onClick={() => handleOpen(account)}
-                className="btn-icon group-hover:text-cinnabar"
-                title="打开浏览器"
+                onClick={() => setDetailsAccount(account)}
+                className="btn-icon hover:text-cinnabar"
+                title="套餐与使用记录"
               >
-                <IconExternal width={16} height={16} />
+                <IconRadar width={16} height={16} />
               </button>
               <button
-                onClick={() => handleBilling(account)}
-                className="btn-icon"
-                title="打开付费页"
+                onClick={() => handleGetKey(account)}
+                disabled={keyLoadingId === account.id}
+                className="btn-icon group-hover:text-cinnabar disabled:opacity-40"
+                title="获取 / 查看 API Key"
               >
-                <IconCard width={16} height={16} />
+                {keyLoadingId === account.id ? (
+                  <div className="h-4 w-4 animate-spin-slow rounded-full border-2 border-cinnabar border-t-transparent" />
+                ) : (
+                  <IconKey width={16} height={16} />
+                )}
               </button>
               <button
                 onClick={() => handleClaim(account)}
@@ -315,6 +338,44 @@ export default function AccountList({
               </button>
             </div>
           </div>
+
+          {keyResult && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-ink-700/40 bg-ink-900/55 px-5 py-2.5 pl-[22px]">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-paper-faint">
+                API Key
+              </span>
+              <code className="min-w-0 flex-1 select-all truncate rounded-md border border-ink-700/60 bg-ink-950/50 px-2.5 py-1.5 font-mono text-[11px] text-paper">
+                {visibleKeys[account.id]
+                  ? keyResult.apiKey
+                  : `${keyResult.apiKey.slice(0, 7)}${"•".repeat(24)}${keyResult.apiKey.slice(-4)}`}
+              </code>
+              <button
+                onClick={() => setVisibleKeys((prev) => ({ ...prev, [account.id]: !prev[account.id] }))}
+                className="btn-icon"
+                title={visibleKeys[account.id] ? "隐藏 Key" : "显示 Key"}
+              >
+                {visibleKeys[account.id] ? <IconEyeOff width={15} height={15} /> : <IconEye width={15} height={15} />}
+              </button>
+              <button
+                onClick={() => handleCopyKey(account, keyResult.apiKey)}
+                className="btn-icon"
+                title="复制 Key"
+              >
+                <IconCopy width={15} height={15} />
+              </button>
+              <button
+                onClick={() => handleGetKey(account, true)}
+                disabled={keyLoadingId === account.id}
+                className="btn-icon disabled:opacity-40"
+                title="从官方刷新 Key"
+              >
+                <IconRefresh width={15} height={15} />
+              </button>
+              <span className="font-mono text-[9px] text-paper-faint">
+                {keyResult.source === "cache" ? "本机加密缓存" : "刚从官方获取"}
+              </span>
+            </div>
+          )}
 
           {/* 额度展示条（常驻显示） */}
           <div
@@ -366,6 +427,12 @@ export default function AccountList({
           );
         })}
       </div>
+      {detailsAccount && (
+        <AccountDetailsPanel
+          account={detailsAccount}
+          onClose={() => setDetailsAccount(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,12 +1,17 @@
 node_modules/
 dist/
 *.db
+.env
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db
 
 # 构建产物
 electron/dist/
-electron/build-assets/
+electron/build-assets/*
+!electron/build-assets/icons/
+!electron/build-assets/icons/**
 release/
 
 # 用户数据（含加密 Cookie，切勿提交）

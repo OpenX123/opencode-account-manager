@@ -2,19 +2,17 @@
 // Sub2Api Sync — 同步 OpenCode Go 账号到 sub2api 数据库
 //
 // 流程：
-//   1. 带 Cookie GET /auth → 302 → /workspace/{wsId}
-//   2. GET /workspace/{wsId}/keys 页面 HTML，提取 sk-xxx API key
-//   3. 通过 SSH 连接远程服务器，docker exec psql 执行 SQL：
+//   1. 从共用 Key 服务读取本机加密缓存（没有缓存时从官方获取）
+//   2. 通过 SSH 连接远程服务器，docker exec psql 执行 SQL：
 //      a. 检查是否已存在同名账号（按 name 去重）
 //      b. INSERT INTO accounts ... RETURNING id
 //      c. INSERT INTO account_groups (account_id, 9, 50)
 // ============================================================
 
 import { execFile } from "node:child_process";
-import { decrypt } from "../utils/crypto.js";
 import { getAccountById } from "./account-store.js";
 import { getSub2ApiSettings, type Sub2ApiSettings } from "./settings-store.js";
-import type { Account, Cookie } from "../types.js";
+import { getApiKey } from "./api-key.js";
 
 export interface SyncResult {
   accountId: string;
@@ -26,28 +24,21 @@ export interface SyncResult {
   sub2apiName?: string;
 }
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
-
-function cookiesToString(cookies: Cookie[]): string {
-  return cookies
-    .filter((c) => c.name && c.value)
-    .map((c) => `${c.name}=${c.value}`)
-    .join("; ");
-}
-
-function decryptCookies(account: Account): Cookie[] {
-  const json = decrypt(account.encryptedCookies, account.iv, account.authTag);
-  return JSON.parse(json) as Cookie[];
-}
-
 /**
  * 通过 SSH 执行 psql SQL 语句。
  * 用 stdin 管道传 SQL，避免 shell 转义问题。
  */
 function execSql(sql: string, cfg: Sub2ApiSettings): Promise<string> {
   return new Promise((resolve, reject) => {
-    const args = [
+    const directHost = process.env.SUB2API_PSQL_HOST?.trim();
+    const command = directHost ? "psql" : "ssh";
+    const args = directHost ? [
+      "-h", directHost,
+      "-p", process.env.SUB2API_PSQL_PORT || "5432",
+      "-U", cfg.dbUser,
+      "-d", cfg.dbName,
+      "-t", "-A",
+    ] : [
       "-o", "ConnectTimeout=15",
       "-o", "StrictHostKeyChecking=no",
       "-o", "BatchMode=yes",
@@ -57,10 +48,13 @@ function execSql(sql: string, cfg: Sub2ApiSettings): Promise<string> {
       `docker exec -i ${cfg.dockerContainer} psql -U ${cfg.dbUser} -d ${cfg.dbName} -t -A`,
     ];
 
-    const proc = execFile("ssh", args, {
+    const proc = execFile(command, args, {
       maxBuffer: 1024 * 1024,
       timeout: 30000,
       windowsHide: true,
+      env: directHost
+        ? { ...process.env, PGPASSWORD: process.env.SUB2API_PSQL_PASSWORD || "" }
+        : process.env,
     });
 
     let stdout = "";
@@ -70,12 +64,12 @@ function execSql(sql: string, cfg: Sub2ApiSettings): Promise<string> {
     proc.stderr?.on("data", (d) => { stderr += d.toString(); });
 
     proc.on("error", (err) => {
-      reject(new Error(`SSH 执行失败: ${err.message}`));
+      reject(new Error(`${directHost ? "PostgreSQL" : "SSH"} 执行失败: ${err.message}`));
     });
 
     proc.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`SSH 退出码 ${code}: ${stderr.trim() || stdout.trim()}`));
+        reject(new Error(`${directHost ? "psql" : "SSH"} 退出码 ${code}: ${stderr.trim() || stdout.trim()}`));
         return;
       }
       resolve(stdout);
@@ -110,6 +104,39 @@ async function findExistingByKey(apiKey: string, cfg: Sub2ApiSettings): Promise<
   return isNaN(id) ? null : id;
 }
 
+async function buildCredentials(apiKey: string, cfg: Sub2ApiSettings): Promise<string> {
+  const modelMapping: Record<string, string> = {};
+  try {
+    const response = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/v1/models`);
+    if (response.ok) {
+      const payload = await response.json() as { data?: Array<{ id?: string }> };
+      for (const model of payload.data || []) {
+        if (model.id) modelMapping[model.id] = model.id;
+      }
+    }
+  } catch {
+    // The account remains usable even if the public model catalog is temporarily unavailable.
+  }
+  return JSON.stringify({ api_key: apiKey, base_url: cfg.baseUrl, model_mapping: modelMapping });
+}
+
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * 将已存在的同 Key 账号修正为当前 sub2api 的 OpenAI API Key 结构。
+ */
+async function updateExistingAccount(
+  accountId: number,
+  apiKey: string,
+  cfg: Sub2ApiSettings
+): Promise<void> {
+  const credentials = await buildCredentials(apiKey, cfg);
+  const sql = `UPDATE accounts SET platform = ${sqlString(cfg.platform)}, type = 'apikey', credentials = COALESCE(credentials, '{}'::jsonb) || ${sqlString(credentials)}::jsonb, concurrency = ${cfg.defaultConcurrency}, priority = ${cfg.defaultPriority}, status = 'active', schedulable = true, updated_at = NOW() WHERE id = ${accountId};`;
+  await execSql(sql, cfg);
+}
+
 /**
  * 检查账号是否已在分组中。
  */
@@ -123,9 +150,8 @@ async function isAlreadyInGroup(accountId: number, cfg: Sub2ApiSettings): Promis
  * 插入新账号到 accounts 表，返回新 id。
  */
 async function insertAccount(name: string, apiKey: string, cfg: Sub2ApiSettings): Promise<number> {
-  const credentials = JSON.stringify({ api_key: apiKey, base_url: cfg.baseUrl });
-  const escapedCreds = credentials.replace(/'/g, "''");
-  const sql = `INSERT INTO accounts (name, platform, type, credentials, concurrency, priority, schedulable) VALUES ('${name}', '${cfg.platform}', '${cfg.platform}', '${escapedCreds}'::jsonb, ${cfg.defaultConcurrency}, ${cfg.defaultPriority}, true) RETURNING id;`;
+  const credentials = await buildCredentials(apiKey, cfg);
+  const sql = `INSERT INTO accounts (name, platform, type, credentials, concurrency, priority, schedulable) VALUES (${sqlString(name)}, ${sqlString(cfg.platform)}, 'apikey', ${sqlString(credentials)}::jsonb, ${cfg.defaultConcurrency}, ${cfg.defaultPriority}, true) RETURNING id;`;
   const result = await execSql(sql, cfg);
   const id = parseInt(result.trim(), 10);
   if (isNaN(id)) throw new Error("插入账号后未返回有效 id");
@@ -141,46 +167,6 @@ async function linkToGroup(accountId: number, priority: number, cfg: Sub2ApiSett
 }
 
 /**
- * 从 OpenCode /keys 页面提取 API key。
- */
-async function fetchApiKey(
-  workspaceId: string,
-  cookieHeader: string,
-  baseHeaders: Record<string, string>
-): Promise<string | null> {
-  const keysUrl = `https://opencode.ai/workspace/${workspaceId}/keys`;
-  const keysRes = await fetch(keysUrl, {
-    headers: { ...baseHeaders, Referer: "https://opencode.ai/" },
-  });
-  if (!keysRes.ok) {
-    throw new Error(`访问 /keys 页面失败: ${keysRes.status}`);
-  }
-  const html = await keysRes.text();
-
-  // 从 HTML 中提取 sk-xxx key
-  const keyMatch = html.match(/sk-[A-Za-z0-9]{20,}/);
-  return keyMatch ? keyMatch[0] : null;
-}
-
-/**
- * 获取 workspaceId（带 Cookie 访问 /auth → 302）。
- */
-async function getWorkspaceId(cookieHeader: string, baseHeaders: Record<string, string>): Promise<string> {
-  const authRes = await fetch("https://opencode.ai/auth", {
-    headers: baseHeaders,
-    redirect: "manual",
-  });
-  const location = authRes.headers.get("location") || "";
-  const wsMatch = location.match(/\/workspace\/(wrk_[A-Za-z0-9]+)/);
-  if (!wsMatch) {
-    throw new Error(
-      `Cookie 可能已失效（状态码 ${authRes.status}，未重定向到工作区）`
-    );
-  }
-  return wsMatch[1];
-}
-
-/**
  * 为指定账号同步到 sub2api。
  */
 export async function syncToSub2api(accountId: string): Promise<SyncResult> {
@@ -189,34 +175,14 @@ export async function syncToSub2api(accountId: string): Promise<SyncResult> {
 
   const cfg = getSub2ApiSettings();
 
-  const cookies = decryptCookies(account);
-  const cookieHeader = cookiesToString(cookies);
-
-  const baseHeaders: Record<string, string> = {
-    Cookie: cookieHeader,
-    "User-Agent": UA,
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-  };
-
-  // 第 1 步：获取 workspaceId
-  const workspaceId = await getWorkspaceId(cookieHeader, baseHeaders);
-
-  // 第 2 步：从 /keys 页面提取 API key
-  const apiKey = await fetchApiKey(workspaceId, cookieHeader, baseHeaders);
-
-  if (!apiKey) {
-    return {
-      accountId,
-      alias: account.alias,
-      success: false,
-      message: "未找到 API key（/keys 页面无 sk-xxx）",
-    };
-  }
+  // Key 获取能力与账号列表共用；默认优先使用本机加密缓存。
+  const { apiKey } = await getApiKey(accountId);
 
   // 第 3 步：检查 sub2api 中是否已存在相同 key
   const existingId = await findExistingByKey(apiKey, cfg);
 
   if (existingId) {
+    await updateExistingAccount(existingId, apiKey, cfg);
     const inGroup = await isAlreadyInGroup(existingId, cfg);
     if (inGroup) {
       return {

@@ -82,6 +82,10 @@ export function updateAccount(
       | "authTag"
       | "lastVerifiedAt"
       | "note"
+      | "encryptedApiKey"
+      | "apiKeyIv"
+      | "apiKeyAuthTag"
+      | "apiKeyUpdatedAt"
     >
   >
 ): void {

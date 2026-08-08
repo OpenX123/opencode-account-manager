@@ -6,28 +6,28 @@ export default {
       colors: {
         // 暖白纸张调：ink 作表面 ramp（浅→深），paper 作文字 ramp（深→浅）
         ink: {
-          950: "#f5f0e6", // 主背景：暖奶油
-          900: "#fbf8f0", // 面板表面
-          850: "#f1ebdd", // 悬停表面
-          800: "#e7dfce", // 图标悬停 / 微底
-          700: "#ddd5c2", // 边框
-          600: "#c8bfa9", // 分隔 / 悬停边框
+          950: "rgb(var(--ink-950) / <alpha-value>)",
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          850: "rgb(var(--ink-850) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)",
+          600: "rgb(var(--ink-600) / <alpha-value>)",
         },
         paper: {
-          DEFAULT: "#2a2620", // 主文字：暖墨黑
-          muted: "#6c6557",
-          faint: "#9a9282",
+          DEFAULT: "rgb(var(--paper) / <alpha-value>)",
+          muted: "rgb(var(--paper-muted) / <alpha-value>)",
+          faint: "rgb(var(--paper-faint) / <alpha-value>)",
         },
         // 主色：朱砂橙（深一档，浅底上对比足）
         cinnabar: {
-          DEFAULT: "#cf4a26",
-          hover: "#e2603a",
-          soft: "#f4ddd3", // 浅桃色徽章底
-          glow: "rgba(207,74,38,0.18)",
+          DEFAULT: "rgb(var(--cinnabar) / <alpha-value>)",
+          hover: "rgb(var(--cinnabar-hover) / <alpha-value>)",
+          soft: "rgb(var(--cinnabar-soft) / <alpha-value>)",
+          glow: "rgb(var(--cinnabar) / 0.18)",
         },
-        sage: "#5a8f4d", // 成功：深一档鼠尾草
-        rose: "#c43d52", // 危险：玫红
-        amber: "#b8841f", // 等待：深琥珀
+        sage: "rgb(var(--sage) / <alpha-value>)",
+        rose: "rgb(var(--rose) / <alpha-value>)",
+        amber: "rgb(var(--amber) / <alpha-value>)",
       },
       fontFamily: {
         display: ['Fraunces', 'ui-serif', 'Georgia', 'serif'],

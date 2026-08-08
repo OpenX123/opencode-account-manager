@@ -4,13 +4,14 @@
 
 import type { AccountSummary, InviteLinkResult, RegistrationStatus, AppSettings } from "../types";
 
-const BASE = "/api";
+const BASE = `${import.meta.env.BASE_URL}api`;
 
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -47,14 +48,140 @@ export function deleteAccount(id: string): Promise<void> {
   return request(`/accounts/${id}`, { method: "DELETE" });
 }
 
-// --- 浏览器 API ---
-
-export function openAccount(id: string): Promise<{ success: boolean }> {
-  return request(`/browser/open/${id}`, { method: "POST" });
+export function getAuthStatus(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>("/auth/status");
 }
 
-export function openBilling(id: string): Promise<{ success: boolean; url: string }> {
-  return request(`/browser/billing/${id}`, { method: "POST" });
+export function login(username: string, password: string): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logout(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>("/auth/logout", { method: "POST" });
+}
+
+export interface InsightUsageWindow {
+  usagePercent: number;
+  remainingPercent: number;
+  resetInSec: number;
+  resetAt: number;
+  status: string;
+}
+
+export interface UsageRecord {
+  id: string;
+  timeCreated: string;
+  model: string;
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWrite5mTokens: number | null;
+  cacheWrite1hTokens: number | null;
+  costMicroCents: number;
+  plan: string;
+}
+
+export interface AccountInsights {
+  accountId: string;
+  alias: string;
+  fetchedAt: number;
+  plan: {
+    name: string;
+    status: "active" | "none" | "unknown";
+    region: string;
+    useBalance: boolean | null;
+    renewalAt: number | null;
+    renewalNote: string;
+  };
+  billing: {
+    balance: number;
+    monthlyLimit: number | null;
+    monthlyUsage: number | null;
+    reloadEnabled: boolean;
+    reloadAmount: number | null;
+    reloadTrigger: number | null;
+    paymentMethodType: string;
+    paymentMethodLast4: string;
+  };
+  windows: {
+    rolling?: InsightUsageWindow;
+    weekly?: InsightUsageWindow;
+    monthly?: InsightUsageWindow;
+  };
+  summary: {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    costMicroCents: number;
+    models: Array<{
+      model: string;
+      provider: string;
+      requests: number;
+      tokens: number;
+      costMicroCents: number;
+    }>;
+  };
+  records: UsageRecord[];
+}
+
+export function getAccountInsights(id: string): Promise<AccountInsights> {
+  return request<AccountInsights>(`/accounts/${id}/insights`);
+}
+
+export interface ApiKeyResult {
+  accountId: string;
+  alias: string;
+  apiKey: string;
+  source: "cache" | "live";
+  updatedAt: number;
+}
+
+export function getApiKey(id: string, refresh = false): Promise<ApiKeyResult> {
+  return request<ApiKeyResult>(
+    `/accounts/${id}/api-key${refresh ? "?refresh=true" : ""}`
+  );
+}
+
+export type OAuthLoginState =
+  | "pending"
+  | "success"
+  | "error"
+  | "cancelled"
+  | "expired";
+
+export interface OAuthLoginStatus {
+  sessionId: string;
+  state: OAuthLoginState;
+  startedAt: number;
+  expiresAt: number;
+  accountId?: string;
+  alias?: string;
+  error?: string;
+}
+
+export function startOAuthLogin(alias?: string): Promise<OAuthLoginStatus> {
+  return request<OAuthLoginStatus>("/browser/oauth/start", {
+    method: "POST",
+    body: JSON.stringify({ alias }),
+  });
+}
+
+export function getOAuthLoginStatus(sessionId: string): Promise<OAuthLoginStatus> {
+  return request<OAuthLoginStatus>(`/browser/oauth/status/${sessionId}`);
+}
+
+export function cancelOAuthLogin(sessionId: string): Promise<OAuthLoginStatus> {
+  return request<OAuthLoginStatus>(`/browser/oauth/cancel/${sessionId}`, {
+    method: "POST",
+  });
 }
 
 // --- 邀请链接 API ---

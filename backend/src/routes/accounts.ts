@@ -13,6 +13,8 @@ import {
 } from "../services/account-store.js";
 import { parseCookies } from "../services/cookie-manager.js";
 import { verifyCookies } from "../services/browser-pool.js";
+import { getAccountInsights } from "../services/account-insights.js";
+import { getApiKey } from "../services/api-key.js";
 import { encrypt } from "../utils/crypto.js";
 import type { Account, Cookie, CreateAccountInput } from "../types.js";
 
@@ -22,6 +24,32 @@ export const accountsRouter: RouterType = Router();
 accountsRouter.get("/", (_req: Request, res: Response) => {
   const accounts = getAllAccounts().map(sanitizeAccount);
   res.json(accounts);
+});
+
+// GET /api/accounts/:id/insights — 套餐、账单摘要和官方使用记录
+accountsRouter.get("/:id/insights", async (req: Request, res: Response) => {
+  try {
+    const result = await getAccountInsights(req.params.id as string);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: `获取账号详情失败: ${(err as Error).message}`,
+    });
+  }
+});
+
+// GET /api/accounts/:id/api-key — 读取本机加密缓存，或显式从官方刷新
+accountsRouter.get("/:id/api-key", async (req: Request, res: Response) => {
+  try {
+    const refresh = req.query.refresh === "true";
+    const result = await getApiKey(req.params.id as string, refresh);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: `获取 API Key 失败: ${(err as Error).message}`,
+    });
+  }
 });
 
 // GET /api/accounts/:id — 获取单个账号详情
