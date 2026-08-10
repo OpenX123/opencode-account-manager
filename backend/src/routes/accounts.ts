@@ -7,6 +7,7 @@ import { v4 as uuid } from "uuid";
 import {
   getAllAccounts,
   getAccountById,
+  getAccountByEmail,
   insertAccount,
   updateAccount,
   deleteAccount,
@@ -102,6 +103,14 @@ accountsRouter.post("/import", async (req: Request, res: Response) => {
           "Cookie 无效或已过期。请重新从浏览器导出最新的 Cookie，确保处于已登录状态。",
         sessionInfo,
       });
+      return;
+    }
+
+    const existing = sessionInfo.email
+      ? getAccountByEmail(sessionInfo.email)
+      : undefined;
+    if (existing) {
+      res.json(sanitizeAccount(existing));
       return;
     }
 

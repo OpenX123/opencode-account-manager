@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test:web-auth": "tsx src/services/web-auth.test.ts"
+    "test:web-auth": "tsx src/services/web-auth.test.ts",
+    "test:registration-monitor": "tsx src/services/registration-monitor.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

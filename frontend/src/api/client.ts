@@ -2,7 +2,7 @@
 // API Client — 后端通信封装
 // ============================================================
 
-import type { AccountSummary, InviteLinkResult, RegistrationStatus, AppSettings } from "../types";
+import type { AccountSummary, InviteLinkResult, RegistrationStatus, AppSettings, ChainAccount, ChainStatus } from "../types";
 
 const BASE = `${import.meta.env.BASE_URL}api`;
 
@@ -184,6 +184,12 @@ export function cancelOAuthLogin(sessionId: string): Promise<OAuthLoginStatus> {
   });
 }
 
+export function openBillingPage(accountId: string): Promise<{ url: string }> {
+  return request<{ url: string }>(`/browser/billing/${accountId}`, {
+    method: "POST",
+  });
+}
+
 // --- 邀请链接 API ---
 
 export function generateInviteLink(accountId: string): Promise<InviteLinkResult> {
@@ -295,6 +301,37 @@ export function testSub2api(): Promise<{ success: boolean; message: string }> {
     method: "POST",
   });
 }
+
+// --- 自动邀请链 API ---
+
+export function parseAccounts(text: string): Promise<{
+  accounts: ChainAccount[];
+  count: number;
+  skippedExisting: number;
+  skippedDuplicate: number;
+  skippedInvalid: number;
+}> {
+  return request("/invite/parse-accounts", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function startAutoChain(
+  mainAccountId: string,
+  accounts: ChainAccount[]
+): Promise<{ chainId: string }> {
+  return request<{ chainId: string }>("/invite/auto-chain", {
+    method: "POST",
+    body: JSON.stringify({ mainAccountId, accounts }),
+  });
+}
+
+export function getAutoChainStatus(chainId: string): Promise<ChainStatus> {
+  return request<ChainStatus>(`/invite/auto-chain/status/${chainId}`);
+}
+
+// --- 设置 API ---
 
 export function getSettings(): Promise<AppSettings> {
   return request<AppSettings>("/settings");

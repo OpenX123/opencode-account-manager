@@ -23,9 +23,11 @@ let browser: Browser | null = null;
 /** 获取或创建共享的 Playwright 浏览器实例 */
 export async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
     browser = await chromium.launch({
       headless: process.env.WEB_MODE === "1" && process.env.REMOTE_BROWSER !== "1",
-      executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined,
+      executablePath,
+      channel: !executablePath && process.platform === "win32" ? "msedge" : undefined,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -206,12 +208,57 @@ export async function openBillingPage(accountId: string) {
     timeout: 30000,
   });
 
+  void enableGoSettingsAfterCheckout(page, goUrl).catch((err) => {
+    console.warn(`[billing] 付款后自动开启 Go 设置失败: ${(err as Error).message}`);
+  });
+
   return {
     browser: await getBrowser(),
     context: ctx,
     page,
     url: stripeUrl,
   };
+}
+
+async function enableGoSettingsAfterCheckout(
+  page: Page,
+  goUrl: string
+): Promise<void> {
+  await page.waitForURL(
+    (url) => `${url.origin}${url.pathname}` === goUrl,
+    { timeout: 60 * 60 * 1000 }
+  );
+  await page.waitForLoadState("domcontentloaded");
+
+  const labels = [
+    "达到使用限额后使用您的可用余额",
+    "启用部署在中国的模型",
+  ];
+  for (const text of labels) {
+    const form = page
+      .locator('form[data-slot="setting-row"]')
+      .filter({ hasText: text })
+      .first();
+    await form.waitFor({ state: "visible", timeout: 30000 });
+    const checkbox = form.locator('input[type="checkbox"]');
+    if (!(await checkbox.isChecked())) {
+      await form.locator('label[data-slot="toggle-label"]').click();
+      await page.waitForTimeout(750);
+    }
+    if (!(await checkbox.isChecked())) throw new Error(`未能开启“${text}”`);
+  }
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  for (const text of labels) {
+    const checked = await page
+      .locator('form[data-slot="setting-row"]')
+      .filter({ hasText: text })
+      .first()
+      .locator('input[type="checkbox"]')
+      .isChecked();
+    if (!checked) throw new Error(`“${text}”刷新后未保持开启`);
+  }
+  console.log("[billing] Go 的余额与中国模型设置已开启并验证");
 }
 
 /**

@@ -54,3 +54,31 @@ export interface Sub2ApiSettings {
 export interface AppSettings {
   sub2api: Sub2ApiSettings;
 }
+
+// --- 自动邀请链 ---
+
+export interface ChainAccount {
+  email: string;
+  password: string;
+  recoveryEmail?: string;
+}
+
+export interface ChainTask {
+  index: number;
+  email: string;
+  status: "pending" | "generating_link" | "registering" | "completed" | "failed";
+  monitorId?: string;
+  newAccountId?: string;
+  newAccountAlias?: string;
+  error?: string;
+  billingOpened?: boolean;
+}
+
+export interface ChainStatus {
+  id: string;
+  mainAccountId: string;
+  inviteLink: string;
+  tasks: ChainTask[];
+  startedAt: number;
+  completedAt: number | null;
+}
