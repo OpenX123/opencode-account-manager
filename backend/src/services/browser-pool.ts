@@ -16,16 +16,10 @@ import {
 } from "./cookie-manager.js";
 import { decrypt } from "../utils/crypto.js";
 import { getAccountById } from "./account-store.js";
+import { enableAllGoSettings, watchForGoSubscription } from "./account-insights.js";
 import type { Cookie, Account } from "../types.js";
 
 let browser: Browser | null = null;
-
-export type GoSetting = "useBalance" | "useChinaProviders";
-
-const GO_SETTING_LABELS: Record<GoSetting, string> = {
-  useBalance: "达到使用限额后使用您的可用余额",
-  useChinaProviders: "启用部署在中国的模型",
-};
 
 /** 获取或创建共享的 Playwright 浏览器实例 */
 export async function getBrowser(): Promise<Browser> {
@@ -63,6 +57,7 @@ async function getWorkspaceId(cookies: Cookie[]): Promise<string> {
     .join("; ");
 
   const authRes = await fetch("https://opencode.ai/auth", {
+    signal: AbortSignal.timeout(4500),
     headers: {
       Cookie: cookieHeader,
       "User-Agent":
@@ -122,7 +117,7 @@ export async function openAccountInBrowser(accountId: string) {
  *   2. 纯 HTTP: POST /_server liteCheckoutUrl → Stripe checkout URL
  *   3. Playwright: 导航到 Stripe checkout 页面
  */
-export async function openBillingPage(accountId: string) {
+export async function getBillingUrl(accountId: string) {
   const account = getAccountById(accountId);
   if (!account) {
     throw new Error(`账号不存在: ${accountId}`);
@@ -170,6 +165,7 @@ export async function openBillingPage(accountId: string) {
 
   const checkoutRes = await fetch("https://opencode.ai/_server", {
     method: "POST",
+    signal: AbortSignal.timeout(4500),
     headers: {
       ...baseHeaders,
       "Content-Type": "application/json",
@@ -204,6 +200,18 @@ export async function openBillingPage(accountId: string) {
   }
 
   const stripeUrl = urlMatch[1];
+  watchForGoSubscription(accountId);
+
+  return { url: stripeUrl };
+}
+
+export async function openBillingPage(accountId: string) {
+  const account = getAccountById(accountId);
+  if (!account) throw new Error(`账号不存在: ${accountId}`);
+  const cookies = decryptCookies(account);
+  const workspaceId = await getWorkspaceId(cookies);
+  const goUrl = `https://opencode.ai/workspace/${workspaceId}/go`;
+  const { url: stripeUrl } = await getBillingUrl(accountId);
 
   // 第 3 步：用 Playwright 打开 Stripe checkout 页面
   const ctx = await (await getBrowser()).newContext();
@@ -215,7 +223,7 @@ export async function openBillingPage(accountId: string) {
     timeout: 30000,
   });
 
-  void enableGoSettingsAfterCheckout(page, goUrl).catch((err) => {
+  void enableGoSettingsAfterCheckout(page, goUrl, accountId).catch((err) => {
     console.warn(`[billing] 付款后自动开启 Go 设置失败: ${(err as Error).message}`);
   });
 
@@ -227,111 +235,17 @@ export async function openBillingPage(accountId: string) {
   };
 }
 
-export async function enableGoSetting(accountId: string, setting: GoSetting) {
-  const account = getAccountById(accountId);
-  if (!account) throw new Error(`账号不存在: ${accountId}`);
-
-  const cookies = decryptCookies(account);
-  const workspaceId = await getWorkspaceId(cookies);
-  const context = await (await getBrowser()).newContext();
-  await context.addCookies(cookiesToPlaywrightFormat(cookies));
-  const page = await context.newPage();
-
-  try {
-    await page.goto(`https://opencode.ai/workspace/${workspaceId}/go`, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
-    await setGoSettingOnPage(page, GO_SETTING_LABELS[setting]);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    const enabled = await getGoSettingCheckbox(page, GO_SETTING_LABELS[setting]).isChecked();
-    if (!enabled) throw new Error("刷新后未保持开启");
-    return { setting, enabled };
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
-export async function getGoSettings(accountId: string): Promise<
-  Record<GoSetting, boolean | null>
-> {
-  const account = getAccountById(accountId);
-  if (!account) throw new Error(`账号不存在: ${accountId}`);
-
-  const cookies = decryptCookies(account);
-  const workspaceId = await getWorkspaceId(cookies);
-  const context = await (await getBrowser()).newContext();
-  await context.addCookies(cookiesToPlaywrightFormat(cookies));
-  const page = await context.newPage();
-
-  try {
-    await page.goto(`https://opencode.ai/workspace/${workspaceId}/go`, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
-    const result = {} as Record<GoSetting, boolean | null>;
-    for (const [setting, text] of Object.entries(GO_SETTING_LABELS) as Array<
-      [GoSetting, string]
-    >) {
-      const checkbox = getGoSettingCheckbox(page, text);
-      const found = await checkbox
-        .waitFor({ state: "attached", timeout: 10000 })
-        .then(() => true)
-        .catch(() => false);
-      result[setting] = found ? await checkbox.isChecked() : null;
-    }
-    return result;
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
 async function enableGoSettingsAfterCheckout(
   page: Page,
-  goUrl: string
+  goUrl: string,
+  accountId: string
 ): Promise<void> {
   await page.waitForURL(
     (url) => `${url.origin}${url.pathname}` === goUrl,
     { timeout: 60 * 60 * 1000 }
   );
-  await page.waitForLoadState("domcontentloaded");
-
-  const labels = Object.values(GO_SETTING_LABELS);
-  for (const text of labels) await setGoSettingOnPage(page, text);
-
-  await page.reload({ waitUntil: "domcontentloaded" });
-  for (const text of labels) {
-    const checked = await page
-      .locator('form[data-slot="setting-row"]')
-      .filter({ hasText: text })
-      .first()
-      .locator('input[type="checkbox"]')
-      .isChecked();
-    if (!checked) throw new Error(`“${text}”刷新后未保持开启`);
-  }
-  console.log("[billing] Go 的余额与中国模型设置已开启并验证");
-}
-
-function getGoSettingCheckbox(page: Page, text: string) {
-  return page
-    .locator('form[data-slot="setting-row"]')
-    .filter({ hasText: text })
-    .first()
-    .locator('input[type="checkbox"]');
-}
-
-async function setGoSettingOnPage(page: Page, text: string): Promise<void> {
-  const form = page
-    .locator('form[data-slot="setting-row"]')
-    .filter({ hasText: text })
-    .first();
-  await form.waitFor({ state: "visible", timeout: 30000 });
-  const checkbox = getGoSettingCheckbox(page, text);
-  if (!(await checkbox.isChecked())) {
-    await form.locator('label[data-slot="toggle-label"]').click();
-    await page.waitForTimeout(750);
-  }
-  if (!(await checkbox.isChecked())) throw new Error(`未能开启“${text}”`);
+  await enableAllGoSettings(accountId);
+  console.log("[billing] Go 的余额与中国模型设置已开启");
 }
 
 /**

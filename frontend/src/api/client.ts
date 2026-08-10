@@ -10,11 +10,18 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(5000),
+      ...options,
+    });
+  } catch (error) {
+    if ((error as Error).name === "TimeoutError") throw new Error("操作超过 5 秒，已停止等待");
+    throw error;
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -134,7 +141,9 @@ export interface AccountInsights {
 }
 
 export function getAccountInsights(id: string): Promise<AccountInsights> {
-  return request<AccountInsights>(`/accounts/${id}/insights`);
+  return request<AccountInsights>(`/accounts/${id}/insights`, {
+    signal: AbortSignal.timeout(5000),
+  });
 }
 
 export interface ApiKeyResult {
@@ -188,6 +197,7 @@ export function cancelOAuthLogin(sessionId: string): Promise<OAuthLoginStatus> {
 export function openBillingPage(accountId: string): Promise<{ url: string }> {
   return request<{ url: string }>(`/browser/billing/${accountId}`, {
     method: "POST",
+    signal: AbortSignal.timeout(5000),
   });
 }
 
@@ -197,6 +207,7 @@ export function enableGoSetting(
 ): Promise<{ setting: string; enabled: boolean }> {
   return request(`/browser/go-setting/${accountId}`, {
     method: "POST",
+    signal: AbortSignal.timeout(5000),
     body: JSON.stringify({ setting }),
   });
 }
