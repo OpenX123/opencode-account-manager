@@ -95,6 +95,7 @@ export interface AccountInsights {
     status: "active" | "none" | "unknown";
     region: string;
     useBalance: boolean | null;
+    useChinaProviders: boolean | null;
     renewalAt: number | null;
     renewalNote: string;
   };
@@ -187,6 +188,16 @@ export function cancelOAuthLogin(sessionId: string): Promise<OAuthLoginStatus> {
 export function openBillingPage(accountId: string): Promise<{ url: string }> {
   return request<{ url: string }>(`/browser/billing/${accountId}`, {
     method: "POST",
+  });
+}
+
+export function enableGoSetting(
+  accountId: string,
+  setting: "useBalance" | "useChinaProviders"
+): Promise<{ setting: string; enabled: boolean }> {
+  return request(`/browser/go-setting/${accountId}`, {
+    method: "POST",
+    body: JSON.stringify({ setting }),
   });
 }
 

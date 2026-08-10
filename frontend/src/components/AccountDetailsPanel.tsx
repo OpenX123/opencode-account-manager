@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { AccountSummary } from "../types";
 import * as api from "../api/client";
 import type { AccountInsights, InsightUsageWindow } from "../api/client";
-import { IconClose, IconRadar, IconRefresh } from "./icons";
+import { IconClose, IconRefresh } from "./icons";
+import { useToast } from "./Toast";
 
 interface Props {
   account: AccountSummary;
@@ -59,9 +60,11 @@ function WindowCard({ label, value }: { label: string; value?: InsightUsageWindo
 }
 
 export default function AccountDetailsPanel({ account, onClose }: Props) {
+  const { toast } = useToast();
   const [data, setData] = useState<AccountInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [action, setAction] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +82,36 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
     void load();
   }, [load]);
 
+  const subscribe = async () => {
+    setAction("subscribe");
+    try {
+      await api.openBillingPage(account.id);
+      toast("Go 付款页已打开，付款完成后刷新套餐状态", "success");
+    } catch (err) {
+      toast(`打开付款页失败: ${(err as Error).message}`, "error");
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const enableSetting = async (
+    setting: "useBalance" | "useChinaProviders",
+    label: string
+  ) => {
+    setAction(setting);
+    try {
+      await api.enableGoSetting(account.id, setting);
+      setData((current) => current
+        ? { ...current, plan: { ...current.plan, [setting]: true } }
+        : current);
+      toast(`已开启“${label}”`, "success");
+    } catch (err) {
+      toast(`开启失败: ${(err as Error).message}`, "error");
+    } finally {
+      setAction(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -87,7 +120,7 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
           <div>
             <h2 className="font-display text-xl text-paper">{account.alias} · 套餐与使用详情</h2>
             <p className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.18em] text-paper-faint">
-              OpenCode 官方只读数据
+              OpenCode 官方套餐与使用数据
             </p>
           </div>
           <div className="flex gap-2">
@@ -117,6 +150,15 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
                       {data.plan.status === "active" ? "订阅有效" : "未检测到有效订阅"}
                       {data.plan.region ? ` · ${data.plan.region}` : ""}
                     </div>
+                    {data.plan.status !== "active" && (
+                      <button
+                        onClick={() => void subscribe()}
+                        disabled={action !== null}
+                        className="btn-primary mt-3 w-full justify-center px-3 py-1.5 text-xs"
+                      >
+                        {action === "subscribe" ? "正在打开…" : "订阅 OpenCode Go"}
+                      </button>
+                    )}
                   </div>
                   <div className="rounded-lg border border-ink-700/70 bg-ink-850/50 p-4">
                     <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-paper-faint">Zen 余额</div>
@@ -138,6 +180,29 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
                   {data.plan.renewalAt
                     ? `下一周期：${formatDate(data.plan.renewalAt)}`
                     : data.plan.renewalNote}
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {([
+                    ["useBalance", "达到限额后使用 Zen 余额", data.plan.useBalance],
+                    ["useChinaProviders", "启用部署在中国的模型", data.plan.useChinaProviders],
+                  ] as const).map(([setting, label, enabled]) => (
+                    <div key={setting} className="flex items-center justify-between gap-4 rounded-lg border border-ink-700/70 bg-ink-850/50 px-4 py-3">
+                      <div>
+                        <div className="text-sm text-paper">{label}</div>
+                        <div className={`mt-1 text-xs ${enabled ? "text-sage" : "text-paper-muted"}`}>
+                          {enabled === null ? "状态未知" : enabled ? "已开启" : "未开启"}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => void enableSetting(setting, label)}
+                        disabled={data.plan.status !== "active" || enabled === true || action !== null}
+                        className="btn-ghost shrink-0 px-3 py-1.5 text-xs"
+                        title={data.plan.status !== "active" ? "请先订阅 OpenCode Go" : undefined}
+                      >
+                        {action === setting ? "开启中…" : enabled ? "已开启" : "开启"}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </section>
 

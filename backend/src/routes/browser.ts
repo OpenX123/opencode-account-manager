@@ -3,7 +3,12 @@
 // ============================================================
 
 import { Router, type Request, type Response, type Router as RouterType } from "express";
-import { openAccountInBrowser, openBillingPage } from "../services/browser-pool.js";
+import {
+  enableGoSetting,
+  openAccountInBrowser,
+  openBillingPage,
+  type GoSetting,
+} from "../services/browser-pool.js";
 import {
   cancelOAuthLogin,
   getOAuthLoginStatus,
@@ -55,6 +60,19 @@ browserRouter.post(
     res.json(status);
   }
 );
+
+browserRouter.post("/go-setting/:accountId", async (req: Request, res: Response) => {
+  const setting = req.body?.setting as GoSetting | undefined;
+  if (setting !== "useBalance" && setting !== "useChinaProviders") {
+    res.status(400).json({ error: "无效的 Go 设置" });
+    return;
+  }
+  try {
+    res.json(await enableGoSetting(req.params.accountId as string, setting));
+  } catch (err) {
+    res.status(500).json({ error: `开启 Go 设置失败: ${(err as Error).message}` });
+  }
+});
 
 // POST /api/browser/open/:accountId — 以该账号身份打开 opencode.ai
 browserRouter.post("/open/:accountId", async (req: Request, res: Response) => {

@@ -1,5 +1,6 @@
 import { decrypt } from "../utils/crypto.js";
 import { getAccountById } from "./account-store.js";
+import { getGoSettings } from "./browser-pool.js";
 import type { Account, Cookie } from "../types.js";
 
 const UA =
@@ -45,6 +46,7 @@ export interface AccountInsights {
     status: "active" | "none" | "unknown";
     region: string;
     useBalance: boolean | null;
+    useChinaProviders: boolean | null;
     renewalAt: number | null;
     renewalNote: string;
   };
@@ -86,10 +88,11 @@ interface RpcContext {
 
 export async function getAccountInsights(accountId: string): Promise<AccountInsights> {
   const context = await createRpcContext(accountId);
-  const [subscriptionText, billingText, usageText] = await Promise.all([
+  const [subscriptionText, billingText, usageText, goSettings] = await Promise.all([
     callQuery(context, "lite.subscription.get"),
     callQuery(context, "billing.get"),
     callQuery(context, "usage.list"),
+    getGoSettings(accountId),
   ]);
 
   const fetchedAt = Date.now();
@@ -119,7 +122,7 @@ export async function getAccountInsights(accountId: string): Promise<AccountInsi
       name: planName,
       status: hasLiteSubscription || subscriptionPresent ? "active" : "none",
       region: readString(subscriptionText, "region") ?? "",
-      useBalance: readBoolean(subscriptionText, "useBalance"),
+      ...goSettings,
       renewalAt: renewalAt?.getTime() ?? null,
       renewalNote: renewalAt
         ? "来自官方订阅响应"
