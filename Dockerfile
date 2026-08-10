@@ -29,5 +29,6 @@ ENV NODE_ENV=production \
     FORCE_FRONTEND_DIST=/app/frontend/dist
 
 EXPOSE 3001 6080
-RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod 0755 /usr/local/bin/docker-entrypoint.sh
 CMD ["/usr/local/bin/docker-entrypoint.sh"]
