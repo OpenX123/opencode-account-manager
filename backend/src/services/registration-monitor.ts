@@ -13,12 +13,23 @@ import { v4 as uuid } from "uuid";
 import type { Page, BrowserContext } from "playwright";
 import { getBrowser, verifyCookies } from "./browser-pool.js";
 import { encrypt } from "../utils/crypto.js";
-import { insertAccount } from "./account-store.js";
+import { getAccountByEmail, insertAccount } from "./account-store.js";
 import type { Account, Cookie } from "../types.js";
 
 // ============================================================
 // 类型定义
 // ============================================================
+
+export interface AutoFill {
+  email: string;
+  password: string;
+  recoveryEmail?: string;
+}
+
+export function isOpenCodeUrl(value: string): boolean {
+  const { hostname } = new URL(value);
+  return hostname === "opencode.ai" || hostname.endsWith(".opencode.ai");
+}
 
 export interface RegistrationMonitor {
   id: string;
@@ -32,6 +43,7 @@ export interface RegistrationMonitor {
   error: string | null;
   startedAt: number;
   completedAt: number | null;
+  autoFill?: AutoFill;
 }
 
 // ============================================================
@@ -55,7 +67,8 @@ const POLL_INTERVAL_MS = 2000; // 2 秒
  */
 export function startRegistration(
   inviteLink: string,
-  invitedBy: string | null = null
+  invitedBy: string | null = null,
+  autoFill?: AutoFill
 ): string {
   const id = uuid();
   const monitor: RegistrationMonitor = {
@@ -63,13 +76,14 @@ export function startRegistration(
     inviteLink,
     invitedBy,
     status: "monitoring",
-    email: "",
-    password: "",
+    email: autoFill?.email ?? "",
+    password: autoFill?.password ?? "",
     newAccountId: null,
     newAccountAlias: null,
     error: null,
     startedAt: Date.now(),
     completedAt: null,
+    autoFill,
   };
   monitors.set(id, monitor);
 
@@ -79,6 +93,7 @@ export function startRegistration(
       m.status = "failed";
       m.error = err.message;
       m.completedAt = Date.now();
+      console.warn(`[registration] 自动注册失败: ${err.message}`);
     }
   });
 
@@ -165,6 +180,11 @@ async function runMonitoring(monitorId: string): Promise<void> {
       timeout: 30000,
     });
 
+    // 自动填表模式：填写邮箱/密码并提交注册表单
+    if (monitor.autoFill) {
+      await autoFillRegistrationForm(page, monitor);
+    }
+
     // 轮询循环
     while (Date.now() - monitor.startedAt < TIMEOUT_MS) {
       // 页面被用户关闭
@@ -235,6 +255,123 @@ async function captureFormData(
   });
 }
 
+// ============================================================
+// 自动注册 — 邀请页 → OpenCode 登录 → Google 登录
+// ============================================================
+
+/**
+ * Google 登录成功后会回到 OpenCode，后续由监控循环抓取 Cookie。
+ */
+async function autoFillRegistrationForm(
+  page: Page,
+  monitor: RegistrationMonitor
+): Promise<void> {
+  const { email, password, recoveryEmail } = monitor.autoFill!;
+  if (!email || !password) return;
+
+  const subscribe = page.locator('a[href="/auth"]').first();
+  await subscribe.waitFor({ state: "visible", timeout: 15000 });
+  await subscribe.click({ timeout: 10000 });
+  console.log("[autoFill] 已进入 OpenCode 登录页");
+
+  const google = page.locator('a[href="/google/authorize"]').first();
+  await google.waitFor({ state: "visible", timeout: 15000 });
+  await google.click({ timeout: 10000 });
+  console.log("[autoFill] 已进入 Google 登录页");
+
+  const identifier = page.locator('#identifierId, input[name="identifier"]').first();
+  await identifier.waitFor({ state: "visible", timeout: 20000 });
+  await identifier.fill(email);
+  await page.locator("#identifierNext").click({ timeout: 10000 });
+  console.log("[autoFill] 已提交 Google 账号");
+
+  const passwordInput = page.locator('input[name="Passwd"]').first();
+  const passwordDeadline = Date.now() + 20_000;
+  while (!(await passwordInput.isVisible().catch(() => false))) {
+    const rejected = page.locator('[aria-live="assertive"]').first();
+    if (await rejected.isVisible().catch(() => false)) {
+      throw new Error("Google 未接受该账号，请检查账号地址或完成安全验证");
+    }
+    if (Date.now() >= passwordDeadline) {
+      throw new Error("Google 未显示密码输入页，请在浏览器窗口完成安全验证");
+    }
+    await page.waitForTimeout(500);
+  }
+  await passwordInput.fill(password);
+  await page.locator("#passwordNext").click({ timeout: 10000 });
+  console.log("[autoFill] 已提交 Google 密码");
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const currentUrl = new URL(page.url());
+    if (isOpenCodeUrl(currentUrl.href)) return;
+    if (currentUrl.pathname.includes("/challenge/recaptcha")) {
+      throw new Error("Google 要求验证码，请在浏览器窗口手动完成后点“立即抓取”");
+    }
+
+    if (currentUrl.pathname.includes("/speedbump/workspacetermsofservice")) {
+      console.log("[autoFill] 检测到 Google Workspace 服务条款页");
+      await page.evaluate(() => {
+        (globalThis as { scrollTo?: (x: number, y: number) => void }).scrollTo?.(
+          0,
+          Number.MAX_SAFE_INTEGER
+        );
+      });
+      const understand = page
+        .locator(
+          'button:has(.VfPpkd-RLmnJb), button:has-text("我了解"), [role="button"]:has-text("我了解"), button:has-text("I understand"), [role="button"]:has-text("I understand")'
+        )
+        .last();
+      await understand.waitFor({ state: "visible", timeout: 15000 });
+      await understand.scrollIntoViewIfNeeded();
+      const termsUrl = page.url();
+      await understand.evaluate((button: any) => button.click()).catch((err) => {
+        if (page.url() === termsUrl) throw err;
+      });
+      console.log("[autoFill] 已接受 Google Workspace 服务条款");
+      await page.waitForTimeout(1000);
+      continue;
+    }
+
+    const rejected = page.locator('[aria-live="assertive"]').first();
+    if (await rejected.isVisible().catch(() => false)) {
+      throw new Error("Google 拒绝登录，请检查账号密码或在浏览器窗口完成安全验证");
+    }
+
+    const recoveryChoice = page
+      .getByText(/Confirm your recovery email|确认您的辅助邮箱|确认辅助邮箱/)
+      .first();
+    if (await recoveryChoice.isVisible().catch(() => false)) {
+      await recoveryChoice.click({ timeout: 5000 });
+    }
+
+    const recovery = page
+      .locator('input[name="knowledgePreregisteredEmailResponse"]')
+      .first();
+    if (await recovery.isVisible().catch(() => false)) {
+      if (!recoveryEmail) {
+        throw new Error("Google 要求验证辅助邮箱，但账号记录未提供辅助邮箱");
+      }
+      await recovery.fill(recoveryEmail);
+      await page.locator("#next, #identifierNext, button:has-text('Next'), button:has-text('下一步')").first().click({ timeout: 5000 });
+    }
+
+    const consent = page
+      .locator("button:has-text('Continue'), button:has-text('继续'), button:has-text('Allow'), button:has-text('允许')")
+      .first();
+    if (await consent.isVisible().catch(() => false)) {
+      const consentUrl = page.url();
+      await consent.click({ timeout: 5000 }).catch((err) => {
+        if (page.url() === consentUrl) throw err;
+      });
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  throw new Error("Google 登录未在 60 秒内返回 OpenCode，请在浏览器窗口完成安全验证");
+}
+
 /**
  * 注册成功处理：抓取 Cookie → 验证 → 加密 → 创建账号
  */
@@ -289,6 +426,15 @@ async function handleRegistrationSuccess(
   const alias = monitor.email || sessionEmail || username || "新注册账号";
   const email = monitor.email || sessionEmail;
 
+  const existing = email ? getAccountByEmail(email) : undefined;
+  if (existing) {
+    monitor.status = "completed";
+    monitor.newAccountId = existing.id;
+    monitor.newAccountAlias = existing.alias;
+    monitor.completedAt = now;
+    return;
+  }
+
   // 构建备注
   const noteParts: string[] = [];
   if (monitor.password) noteParts.push(`密码: ${monitor.password}`);
@@ -312,8 +458,10 @@ async function handleRegistrationSuccess(
 
   insertAccount(account);
 
+  const stored = email ? getAccountByEmail(email) ?? account : account;
+
   monitor.status = "completed";
-  monitor.newAccountId = account.id;
-  monitor.newAccountAlias = account.alias;
+  monitor.newAccountId = stored.id;
+  monitor.newAccountAlias = stored.alias;
   monitor.completedAt = now;
 }

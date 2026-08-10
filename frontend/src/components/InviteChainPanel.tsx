@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
-import type { AccountSummary, InviteLinkResult } from "../types";
+import type { AccountSummary, InviteLinkResult, ChainAccount, ChainTask } from "../types";
 import { useToast } from "./Toast";
 import * as api from "../api/client";
 import { IconClose, IconChain, IconCheck, IconRadar, IconRefresh } from "./icons";
@@ -33,7 +33,7 @@ export default function InviteChainPanel({
   onClose,
   onAccountCreated,
 }: Props) {
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(accounts[0]?.id ?? "");
   const [generating, setGenerating] = useState(false);
   const [rows, setRows] = useState<LinkRow[]>([]);
   const { toast } = useToast();
@@ -41,6 +41,17 @@ export default function InviteChainPanel({
   // 用 ref 让轮询回调始终读到最新 rows
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+
+  // --- 自动邀请链状态 ---
+  const [chainText, setChainText] = useState("");
+  const [parsedAccounts, setParsedAccounts] = useState<ChainAccount[]>([]);
+  const [chainMainId, setChainMainId] = useState(accounts[0]?.id ?? "");
+  const [chainId, setChainId] = useState<string | null>(null);
+  const [chainTasks, setChainTasks] = useState<ChainTask[]>([]);
+  const [chainInviteLink, setChainInviteLink] = useState("");
+  const [chainRunning, setChainRunning] = useState(false);
+  const chainIdRef = useRef(chainId);
+  chainIdRef.current = chainId;
 
   const handleGenerate = async () => {
     if (!selectedId) {
@@ -146,6 +157,9 @@ export default function InviteChainPanel({
       if (status.status === "completed") {
         toast(`抓取成功！新账号「${status.newAccountAlias}」已导入`, "success");
         onAccountCreated?.();
+        void api.openBillingPage(status.newAccountId!).catch((err) =>
+          toast(`账号已导入，但付款页打开失败: ${(err as Error).message}`, "error")
+        );
       }
     } catch (err) {
       const msg = (err as Error).message;
@@ -192,6 +206,9 @@ export default function InviteChainPanel({
               "success"
             );
             onAccountCreated?.();
+            void api.openBillingPage(status.newAccountId!).catch((err) =>
+              toast(`账号已导入，但付款页打开失败: ${(err as Error).message}`, "error")
+            );
           } else if (status.status === "failed" || status.status === "timeout") {
             toast(`监控结束: ${status.error}`, "error");
           }
@@ -206,6 +223,107 @@ export default function InviteChainPanel({
 
   const handleRemoveRow = (accountId: string) => {
     setRows((prev) => prev.filter((r) => r.accountId !== accountId));
+  };
+
+  // --- 自动邀请链 handlers ---
+
+  const handleParseAccounts = async () => {
+    if (!chainText.trim()) {
+      toast("请先粘贴账号文本", "error");
+      return;
+    }
+    try {
+      const result = await api.parseAccounts(chainText);
+      setParsedAccounts(result.accounts);
+      const skipped = result.skippedExisting + result.skippedDuplicate;
+      toast(
+        `解析完成: ${result.count} 个待注册${skipped ? `，已自动跳过 ${skipped} 个重复账号` : ""}`,
+        "success"
+      );
+    } catch (err) {
+      toast(`解析失败: ${(err as Error).message}`, "error");
+    }
+  };
+
+  const handleStartAutoChain = async () => {
+    if (!chainMainId) {
+      toast("请选择主号", "error");
+      return;
+    }
+    if (parsedAccounts.length === 0) {
+      toast("请先解析账号列表", "error");
+      return;
+    }
+
+    setChainRunning(true);
+    setChainTasks(
+      parsedAccounts.map((a, i) => ({
+        index: i,
+        email: a.email,
+        status: "pending" as const,
+      }))
+    );
+
+    try {
+      const { chainId: newChainId } = await api.startAutoChain(chainMainId, parsedAccounts);
+      setChainId(newChainId);
+      toast(`自动邀请链已启动 (${parsedAccounts.length} 个账号)`, "info");
+    } catch (err) {
+      toast(`启动失败: ${(err as Error).message}`, "error");
+      setChainRunning(false);
+      setChainTasks([]);
+    }
+  };
+
+  // 轮询邀请链状态
+  useEffect(() => {
+    if (!chainId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getAutoChainStatus(chainId);
+        setChainTasks(status.tasks);
+        setChainInviteLink(status.inviteLink);
+
+        const allDone = status.tasks.every(
+          (t) => t.status === "completed" || t.status === "failed"
+        );
+        if (allDone && status.completedAt) {
+          setChainRunning(false);
+          clearInterval(interval);
+          const successCount = status.tasks.filter((t) => t.status === "completed").length;
+          toast(
+            `邀请链完成: ${successCount}/${status.tasks.length} 个账号注册成功`,
+            successCount > 0 ? "success" : "error"
+          );
+          onAccountCreated?.();
+        }
+      } catch {
+        // 轮询错误静默忽略
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [chainId, toast, onAccountCreated]);
+
+  const statusLabel = (s: ChainTask["status"]): string => {
+    switch (s) {
+      case "pending": return "等待中";
+      case "generating_link": return "生成链接";
+      case "registering": return "注册中";
+      case "completed": return "已完成";
+      case "failed": return "失败";
+    }
+  };
+
+  const statusColor = (s: ChainTask["status"]): string => {
+    switch (s) {
+      case "pending": return "text-paper-faint";
+      case "generating_link": return "text-amber";
+      case "registering": return "text-amber";
+      case "completed": return "text-sage";
+      case "failed": return "text-rose";
+    }
   };
 
   return (
@@ -234,6 +352,140 @@ export default function InviteChainPanel({
 
         {/* 内容 */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
+          {/* ========== 自动邀请链区域 ========== */}
+          <div className="mb-8 rounded-xl border border-cinnabar/30 bg-cinnabar/5 px-5 py-5">
+            <div className="flex items-center gap-2 mb-4">
+              <IconRadar width={18} height={18} className="text-cinnabar" />
+              <h3 className="font-display text-base text-paper">自动邀请链</h3>
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-cinnabar/70">
+                粘贴账号 → 解析 → 一键自动注册
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {/* 账号文本输入 */}
+              <div>
+                <label className="label">
+                  账号列表（格式: email----密码----恢复邮箱，每行一个）
+                </label>
+                <textarea
+                  value={chainText}
+                  onChange={(e) => setChainText(e.target.value)}
+                  placeholder={`qqm57d6hy9ogh@alk.rehearsalk.com----rlU19REbns----toe54gtyuw@163.com\np6u1la2mmi2pa@alk.rehearsalk.com----UVGAaNo75p----e3p9kx8pqd@gmail.com`}
+                  rows={5}
+                  className="field w-full resize-y font-mono text-xs leading-relaxed"
+                  disabled={chainRunning}
+                />
+              </div>
+
+              {/* 解析 + 主号选择 */}
+              <div className="flex gap-2 items-end flex-wrap">
+                <button
+                  onClick={handleParseAccounts}
+                  disabled={chainRunning || !chainText.trim()}
+                  className="btn-ghost px-3 py-1.5 text-xs"
+                >
+                  解析账号
+                </button>
+
+                <div className="flex-1 min-w-[140px]">
+                  <label className="label">主号（用它生成邀请链接）</label>
+                  <select
+                    value={chainMainId}
+                    onChange={(e) => setChainMainId(e.target.value)}
+                    className="field w-full"
+                    disabled={chainRunning}
+                  >
+                    <option value="">— 选主号 —</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.alias}
+                        {a.email ? ` (${a.email})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleStartAutoChain}
+                  disabled={
+                    chainRunning ||
+                    parsedAccounts.length === 0 ||
+                    !chainMainId
+                  }
+                  className="btn-primary whitespace-nowrap"
+                >
+                  <IconRadar width={15} height={15} />
+                  {chainRunning ? "运行中…" : `启动自动邀请链 (${parsedAccounts.length})`}
+                </button>
+              </div>
+
+              {/* 解析结果预览 */}
+              {parsedAccounts.length > 0 && (
+                <div className="rounded border border-ink-700 bg-ink-850/40 px-3 py-2 text-xs text-paper-muted">
+                  去重后待注册 {parsedAccounts.length} 个账号:{" "}
+                  {parsedAccounts.map((a) => a.email).join(", ")}
+                </div>
+              )}
+
+              {/* 邀请链进度 */}
+              {chainTasks.length > 0 && (
+                <div className="mt-2">
+                  <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-paper-faint">
+                    任务进度
+                    {chainInviteLink && (
+                      <span className="ml-2 normal-case text-[10px] text-paper-muted">
+                        邀请链接已生成
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {chainTasks.map((task) => (
+                      <div
+                        key={task.index}
+                        className={`flex items-center justify-between rounded border px-3 py-2 text-xs ${
+                          task.status === "completed"
+                            ? "border-sage/30 bg-sage/5"
+                            : task.status === "failed"
+                            ? "border-rose/30 bg-rose/5"
+                            : task.status === "registering"
+                            ? "border-amber/30 bg-amber/5"
+                            : "border-ink-700 bg-ink-850/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`font-mono text-[11px] ${task.status === "failed" ? "text-rose" : "text-paper"}`}>
+                            #{task.index + 1}
+                          </span>
+                          <span className="text-paper-muted">{task.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {task.status === "registering" && (
+                            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />
+                          )}
+                          <span className={`font-mono text-[11px] ${statusColor(task.status)}`}>
+                            {statusLabel(task.status)}
+                          </span>
+                          {task.status === "completed" && task.newAccountAlias && (
+                            <span className="text-sage">
+                              → {task.newAccountAlias}
+                              {task.billingOpened ? " 💳" : ""}
+                            </span>
+                          )}
+                          {task.status === "failed" && task.error && (
+                            <span className="text-rose truncate max-w-[120px]" title={task.error}>
+                              {task.error}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* 配置区 */}
           <div className="flex flex-col gap-5 animate-fade-in">
             <div>
@@ -267,7 +519,8 @@ export default function InviteChainPanel({
             <div className="rounded-lg border border-ink-700 bg-ink-850/60 px-4 py-3 text-xs leading-relaxed text-paper-muted">
               生成需要用该账号的 Cookie 登录后访问邀请页，约 10–15 秒。
               拿到链接后点击「注册监控」会打开无 Cookie 的干净浏览器，
-              后台自动监控邮箱密码，注册成功后抓取 Cookie 自动导入。
+              注册和验证由你在窗口中完成；成功后会抓取 Cookie 自动导入，
+              并打开该账号的付款页。付款完成后会自动开启余额超额使用和中国模型。
             </div>
           </div>
 

@@ -62,8 +62,16 @@ export function getAccountById(id: string): Account | undefined {
   return load().find((a) => a.id === id);
 }
 
+export function getAccountByEmail(email: string): Account | undefined {
+  const normalized = email.trim().toLowerCase();
+  return normalized
+    ? load().find((account) => account.email.trim().toLowerCase() === normalized)
+    : undefined;
+}
+
 export function insertAccount(account: Account): void {
   const list = load();
+  if (account.email && getAccountByEmail(account.email)) return;
   list.push(account);
   save();
 }
