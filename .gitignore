@@ -16,6 +16,7 @@ release/
 
 # 用户数据（含加密 Cookie，切勿提交）
 data/
+账号.txt
 
 # 日志 & 临时文件
 *.log
