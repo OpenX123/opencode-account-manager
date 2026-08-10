@@ -1,10 +1,23 @@
 import { decrypt } from "../utils/crypto.js";
 import { getAccountById } from "./account-store.js";
-import { getGoSettings } from "./browser-pool.js";
 import type { Account, Cookie } from "../types.js";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+const REQUEST_TIMEOUT_MS = 4_500;
+const HASH_CACHE_MS = 60 * 60 * 1000;
+let hashCache = {
+  value: new Map([
+    ["lite.subscription.get", "c7389bd0e731f80f49593e5ee53835475f4e28594dd6bd83eb229bab753498cd"],
+    ["billing.get", "c83b78a614689c38ebee981f9b39a8b377716db85c1fd7dbab604adc02d3313d"],
+    ["usage.list", "6262ba54bff26cd7ec162f93db420e0d19df9cd94b2233dfe3b6b24c3f990388"],
+    ["setLiteUseBalance", "0c8d84b0a700eb0de440ca4c9105b42d6c9ede971d6bf592fa4f91bbeaaa1e6b"],
+    ["go.providerRouting.set", "57e61af1bc9c8fa15e0c1a880a2a6754484afdd4a3bc4426b3fc02e3a7ff4d69"],
+  ]),
+  expiresAt: 0,
+};
+let hashRefresh: Promise<void> | null = null;
+const subscriptionWatchers = new Set<string>();
 
 export interface InsightUsageWindow {
   usagePercent: number;
@@ -88,13 +101,11 @@ interface RpcContext {
 
 export async function getAccountInsights(accountId: string): Promise<AccountInsights> {
   const context = await createRpcContext(accountId);
-  const [subscriptionText, billingText, usageText, goSettings] = await Promise.all([
+  const [subscriptionText, billingText, usageText] = await Promise.all([
     callQuery(context, "lite.subscription.get"),
     callQuery(context, "billing.get"),
     callQuery(context, "usage.list"),
-    getGoSettings(accountId),
   ]);
-
   const fetchedAt = Date.now();
   const records = parseUsageRecords(usageText);
   const hasLiteSubscription = /\bliteSubscriptionID:"/.test(billingText);
@@ -113,6 +124,7 @@ export async function getAccountInsights(accountId: string): Promise<AccountInsi
     readDate(billingText, "currentPeriodEnd") ??
     readDate(billingText, "periodEnd") ??
     readDate(billingText, "renewalAt");
+  const goSettings = parseGoSettings(subscriptionText, billingText);
 
   return {
     accountId,
@@ -148,6 +160,78 @@ export async function getAccountInsights(accountId: string): Promise<AccountInsi
   };
 }
 
+export function parseGoSettings(subscriptionText: string, billingText: string) {
+  return {
+    useBalance:
+      readBoolean(subscriptionText, "useBalance") ?? readBoolean(billingText, "useBalance"),
+    useChinaProviders:
+      readBoolean(subscriptionText, "useChinaProviders") ??
+      readBoolean(billingText, "useChinaProviders") ??
+      /\bregion:\$R\[\d+\]=\[[^\]]*"cn"/.test(subscriptionText),
+  };
+}
+
+export type GoSetting = "useBalance" | "useChinaProviders";
+
+export async function enableGoSetting(accountId: string, setting: GoSetting) {
+  const context = await createRpcContext(accountId);
+  const label = setting === "useBalance" ? "setLiteUseBalance" : "go.providerRouting.set";
+  const hash = context.hashes.get(label);
+  if (!hash) throw new Error(`官方页面未提供 ${label} 操作`);
+
+  const body = new URLSearchParams({ workspaceID: context.workspaceId });
+  // 官方 action 接收的是切换前状态；false 表示将其开启。
+  body.set(setting, "false");
+  const response = await fetch("https://opencode.ai/_server", {
+    method: "POST",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: {
+      Cookie: context.cookieHeader,
+      "User-Agent": UA,
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      Origin: "https://opencode.ai",
+      Referer: `${context.workspaceUrl}/go`,
+      "x-server-id": hash,
+      "x-server-instance": "server-fn:0",
+      "x-single-flight": "true",
+    },
+    body,
+  });
+  if (!response.ok) throw new Error(`${label} 操作失败: HTTP ${response.status}`);
+  const text = await response.text();
+  if (/error:"(?!void 0)([^"]+)"/.test(text)) throw new Error(`${label} 操作失败`);
+  return { setting, enabled: true };
+}
+
+export async function enableAllGoSettings(accountId: string): Promise<void> {
+  await Promise.all([
+    enableGoSetting(accountId, "useBalance"),
+    enableGoSetting(accountId, "useChinaProviders"),
+  ]);
+}
+
+export function watchForGoSubscription(accountId: string): void {
+  if (subscriptionWatchers.has(accountId)) return;
+  subscriptionWatchers.add(accountId);
+  void (async () => {
+    try {
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        try {
+          if ((await getAccountInsights(accountId)).plan.status !== "active") continue;
+          await enableAllGoSettings(accountId);
+          console.log(`[billing] ${accountId} 的 Go 设置已自动开启`);
+          return;
+        } catch (error) {
+          console.warn(`[billing] 检查付款状态失败: ${(error as Error).message}`);
+        }
+      }
+    } finally {
+      subscriptionWatchers.delete(accountId);
+    }
+  })();
+}
+
 async function createRpcContext(accountId: string): Promise<RpcContext> {
   const account = getAccountById(accountId);
   if (!account) throw new Error(`账号不存在: ${accountId}`);
@@ -166,6 +250,7 @@ async function createRpcContext(accountId: string): Promise<RpcContext> {
   const auth = await fetch("https://opencode.ai/auth", {
     headers: baseHeaders,
     redirect: "manual",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const location = auth.headers.get("location") ?? "";
   const workspaceId = location.match(/\/workspace\/(wrk_[A-Za-z0-9]+)/)?.[1];
@@ -174,6 +259,27 @@ async function createRpcContext(accountId: string): Promise<RpcContext> {
   }
 
   const workspaceUrl = `https://opencode.ai/workspace/${workspaceId}`;
+  const hashes = await getRpcHashes(workspaceUrl, baseHeaders);
+
+  return { account, workspaceId, cookieHeader, workspaceUrl, hashes };
+}
+
+async function getRpcHashes(
+  workspaceUrl: string,
+  headers: Record<string, string>
+): Promise<Map<string, string>> {
+  if (hashCache.expiresAt <= Date.now() && !hashRefresh) {
+    hashRefresh = refreshRpcHashes(workspaceUrl, headers)
+      .catch((error) => console.warn(`[insights] 刷新 RPC 地址失败: ${(error as Error).message}`))
+      .finally(() => { hashRefresh = null; });
+  }
+  return hashCache.value;
+}
+
+async function refreshRpcHashes(
+  workspaceUrl: string,
+  headers: Record<string, string>
+): Promise<void> {
   const pageUrls = [
     workspaceUrl,
     `${workspaceUrl}/go`,
@@ -181,8 +287,11 @@ async function createRpcContext(accountId: string): Promise<RpcContext> {
     `${workspaceUrl}/usage`,
   ];
   const assetUrls = new Set<string>();
-  for (const pageUrl of pageUrls) {
-    const response = await fetch(pageUrl, { headers: baseHeaders });
+  const pages = await Promise.all(pageUrls.map((pageUrl) => fetch(pageUrl, {
+    headers,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })));
+  for (const response of pages) {
     if (!response.ok) continue;
     const html = await response.text();
     for (const match of html.matchAll(/(?:href|src)="(\/_build\/assets\/[^"]+\.js)"/g)) {
@@ -192,8 +301,11 @@ async function createRpcContext(accountId: string): Promise<RpcContext> {
   if (assetUrls.size === 0) throw new Error("无法读取官方页面资源");
 
   const hashes = new Map<string, string>();
-  for (const assetUrl of assetUrls) {
-    const response = await fetch(assetUrl, { headers: baseHeaders });
+  const assets = await Promise.all([...assetUrls].map((assetUrl) => fetch(assetUrl, {
+    headers,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })));
+  for (const response of assets) {
     if (!response.ok) continue;
     const text = await response.text();
     const references = new Map<string, string>();
@@ -209,8 +321,7 @@ async function createRpcContext(accountId: string): Promise<RpcContext> {
       for (const match of text.matchAll(labelPattern)) hashes.set(match[1], hash);
     }
   }
-
-  return { account, workspaceId, cookieHeader, workspaceUrl, hashes };
+  if (hashes.size > 0) hashCache = { value: hashes, expiresAt: Date.now() + HASH_CACHE_MS };
 }
 
 async function callQuery(context: RpcContext, label: string): Promise<string> {
@@ -224,6 +335,7 @@ async function callQuery(context: RpcContext, label: string): Promise<string> {
   const response = await fetch(
     `https://opencode.ai/_server?id=${hash}&args=${encodeURIComponent(args)}`,
     {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: {
         Cookie: context.cookieHeader,
         "User-Agent": UA,
@@ -375,8 +487,12 @@ function readNumber(text: string, key: string): number | null {
 
 function readBoolean(text: string, key: string): boolean | null {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const value = text.match(new RegExp(`\\b${escapedKey}:(true|false|null)`))?.[1];
-  return value === "true" ? true : value === "false" ? false : null;
+  const value = text.match(new RegExp(`\\b${escapedKey}:(true|false|!0|!1|null)`))?.[1];
+  return value === "true" || value === "!0"
+    ? true
+    : value === "false" || value === "!1"
+      ? false
+      : null;
 }
 
 function readDate(text: string, key: string): Date | null {

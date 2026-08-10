@@ -4,11 +4,10 @@
 
 import { Router, type Request, type Response, type Router as RouterType } from "express";
 import {
-  enableGoSetting,
   openAccountInBrowser,
-  openBillingPage,
-  type GoSetting,
+  getBillingUrl,
 } from "../services/browser-pool.js";
+import { enableGoSetting, type GoSetting } from "../services/account-insights.js";
 import {
   cancelOAuthLogin,
   getOAuthLoginStatus,
@@ -93,10 +92,10 @@ browserRouter.post(
   "/billing/:accountId",
   async (req: Request, res: Response) => {
     try {
-      const result = await openBillingPage(req.params.accountId as string);
+      const result = await getBillingUrl(req.params.accountId as string);
       res.json({
         success: true,
-        message: "付费页面已打开",
+        message: "已生成付费页面",
         url: result.url,
       });
     } catch (err) {

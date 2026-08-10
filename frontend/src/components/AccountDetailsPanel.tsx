@@ -83,11 +83,15 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
   }, [load]);
 
   const subscribe = async () => {
+    const paymentWindow = window.open("about:blank", "_blank");
     setAction("subscribe");
     try {
-      await api.openBillingPage(account.id);
+      const result = await api.openBillingPage(account.id);
+      if (!paymentWindow) throw new Error("浏览器拦截了新窗口，请允许弹窗后重试");
+      paymentWindow.location.href = result.url;
       toast("Go 付款页已打开，付款完成后刷新套餐状态", "success");
     } catch (err) {
+      paymentWindow?.close();
       toast(`打开付款页失败: ${(err as Error).message}`, "error");
     } finally {
       setAction(null);
@@ -132,6 +136,19 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-6">
+          <button
+            onClick={() => void subscribe()}
+            disabled={action !== null || !data || data.plan.status === "active"}
+            className="btn-primary mb-4 w-full justify-center px-4 py-2.5 text-sm"
+          >
+            {!data
+              ? "正在确认 OpenCode Go 套餐…"
+              : data.plan.status === "active"
+              ? "OpenCode Go 已订阅"
+              : action === "subscribe"
+                ? "正在打开付款页…"
+                : "订阅 OpenCode Go（首月 $5）"}
+          </button>
           {loading && !data && (
             <div className="flex items-center gap-3 py-24 text-paper-muted">
               <div className="h-4 w-4 animate-spin-slow rounded-full border-2 border-cinnabar border-t-transparent" />
@@ -150,15 +167,6 @@ export default function AccountDetailsPanel({ account, onClose }: Props) {
                       {data.plan.status === "active" ? "订阅有效" : "未检测到有效订阅"}
                       {data.plan.region ? ` · ${data.plan.region}` : ""}
                     </div>
-                    {data.plan.status !== "active" && (
-                      <button
-                        onClick={() => void subscribe()}
-                        disabled={action !== null}
-                        className="btn-primary mt-3 w-full justify-center px-3 py-1.5 text-xs"
-                      >
-                        {action === "subscribe" ? "正在打开…" : "订阅 OpenCode Go"}
-                      </button>
-                    )}
                   </div>
                   <div className="rounded-lg border border-ink-700/70 bg-ink-850/50 p-4">
                     <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-paper-faint">Zen 余额</div>

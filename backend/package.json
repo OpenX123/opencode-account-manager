@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test:web-auth": "tsx src/services/web-auth.test.ts",
+    "test:account-insights": "tsx src/services/account-insights.test.ts",
     "test:registration-monitor": "tsx src/services/registration-monitor.test.ts"
   },
   "dependencies": {
