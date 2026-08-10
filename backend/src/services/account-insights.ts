@@ -180,8 +180,7 @@ export async function enableGoSetting(accountId: string, setting: GoSetting) {
   if (!hash) throw new Error(`官方页面未提供 ${label} 操作`);
 
   const body = new URLSearchParams({ workspaceID: context.workspaceId });
-  // 官方 action 接收的是切换前状态；false 表示将其开启。
-  body.set(setting, "false");
+  body.set(setting, goSettingEnableValue(setting));
   const response = await fetch("https://opencode.ai/_server", {
     method: "POST",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -201,6 +200,10 @@ export async function enableGoSetting(accountId: string, setting: GoSetting) {
   const text = await response.text();
   if (/error:"(?!void 0)([^"]+)"/.test(text)) throw new Error(`${label} 操作失败`);
   return { setting, enabled: true };
+}
+
+export function goSettingEnableValue(setting: GoSetting): string {
+  return setting === "useBalance" ? "true" : "false";
 }
 
 export async function enableAllGoSettings(accountId: string): Promise<void> {
