@@ -13,10 +13,10 @@ import {
 } from "../services/registration-monitor.js";
 import { claimReward } from "../services/reward-claimer.js";
 import { checkUsage } from "../services/usage-checker.js";
+import { accountInsightsToUsageResult, getAllAccountInsightsCached } from "../services/account-insights.js";
 import { syncToSub2api, testSub2apiConnection } from "../services/sub2api-sync.js";
 import { getAllAccounts } from "../services/account-store.js";
 import type { SyncResult } from "../services/sub2api-sync.js";
-import type { UsageResult } from "../services/usage-checker.js";
 
 export const inviteRouter: RouterType = Router();
 
@@ -425,23 +425,12 @@ inviteRouter.post(
   "/usage-batch",
   async (_req: Request, res: Response) => {
     try {
-      const { getAllAccounts } = await import("../services/account-store.js");
-      const accounts = getAllAccounts();
-      const results: UsageResult[] = [];
-      for (const account of accounts) {
-        try {
-          const result = await checkUsage(account.id);
-          results.push(result);
-        } catch (err) {
-          results.push({
-            accountId: account.id,
-            alias: account.alias,
-            success: false,
-            message: `查询失败: ${(err as Error).message}`,
-          });
-        }
-      }
-      res.json({ results });
+      const result = await getAllAccountInsightsCached();
+      res.json({
+        results: result.value.map(accountInsightsToUsageResult),
+        cached: result.cached,
+        fetchedAt: result.fetchedAt,
+      });
     } catch (err) {
       res
         .status(500)
