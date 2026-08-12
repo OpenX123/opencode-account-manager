@@ -153,8 +153,8 @@ export interface AccountInsightsBatchItem {
   error?: string;
 }
 
-export function getAllAccountInsights(): Promise<{ results: AccountInsightsBatchItem[] }> {
-  return request<{ results: AccountInsightsBatchItem[] }>("/accounts/insights", {
+export function getAllAccountInsights(refresh = false): Promise<{ results: AccountInsightsBatchItem[] }> {
+  return request<{ results: AccountInsightsBatchItem[] }>(`/accounts/insights${refresh ? "?refresh=true" : ""}`, {
     signal: AbortSignal.timeout(120000),
   });
 }
