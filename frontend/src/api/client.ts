@@ -146,6 +146,19 @@ export function getAccountInsights(id: string): Promise<AccountInsights> {
   });
 }
 
+export interface AccountInsightsBatchItem {
+  accountId: string;
+  alias: string;
+  insights?: AccountInsights;
+  error?: string;
+}
+
+export function getAllAccountInsights(): Promise<{ results: AccountInsightsBatchItem[] }> {
+  return request<{ results: AccountInsightsBatchItem[] }>("/accounts/insights", {
+    signal: AbortSignal.timeout(120000),
+  });
+}
+
 export interface ApiKeyResult {
   accountId: string;
   alias: string;
