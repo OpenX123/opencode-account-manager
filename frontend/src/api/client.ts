@@ -290,6 +290,7 @@ export function checkUsage(accountId: string): Promise<UsageResult> {
 export function checkUsageBatch(): Promise<{ results: UsageResult[] }> {
   return request<{ results: UsageResult[] }>("/invite/usage-batch", {
     method: "POST",
+    signal: AbortSignal.timeout(60000),
   });
 }
 
