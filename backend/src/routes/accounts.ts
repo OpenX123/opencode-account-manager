@@ -27,6 +27,29 @@ accountsRouter.get("/", (_req: Request, res: Response) => {
   res.json(accounts);
 });
 
+// GET /api/accounts/insights — 汇总所有账号的官方使用记录
+accountsRouter.get("/insights", async (_req: Request, res: Response) => {
+  const results = [];
+  // ponytail: sequential requests avoid bursting the official API; add bounded concurrency only if account count makes this too slow.
+  for (const account of getAllAccounts()) {
+    try {
+      results.push({
+        accountId: account.id,
+        alias: account.alias,
+        insights: await getAccountInsights(account.id),
+      });
+    } catch (err) {
+      results.push({
+        accountId: account.id,
+        alias: account.alias,
+        error: (err as Error).message,
+      });
+    }
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ results });
+});
+
 // GET /api/accounts/:id/insights — 套餐、账单摘要和官方使用记录
 accountsRouter.get("/:id/insights", async (req: Request, res: Response) => {
   try {
