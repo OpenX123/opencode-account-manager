@@ -14,32 +14,12 @@ import {
 } from "../services/account-store.js";
 import { parseCookies } from "../services/cookie-manager.js";
 import { verifyCookies } from "../services/browser-pool.js";
-import { getAccountInsights } from "../services/account-insights.js";
+import { getAccountInsights, getAllAccountInsightsCached } from "../services/account-insights.js";
 import { getApiKey } from "../services/api-key.js";
 import { encrypt } from "../utils/crypto.js";
-import { createAsyncCache } from "../utils/async-cache.js";
 import type { Account, Cookie, CreateAccountInput } from "../types.js";
 
 export const accountsRouter: RouterType = Router();
-
-const getCachedAllInsights = createAsyncCache(30_000, async () => {
-  // ponytail: all-account concurrency favors the 3s latency target; add a small pool only if official rate limits appear.
-  return Promise.all(getAllAccounts().map(async (account) => {
-    try {
-      return {
-        accountId: account.id,
-        alias: account.alias,
-        insights: await getAccountInsights(account.id),
-      };
-    } catch (err) {
-      return {
-        accountId: account.id,
-        alias: account.alias,
-        error: (err as Error).message,
-      };
-    }
-  }));
-});
 
 // GET /api/accounts — 列出所有账号（不含加密 Cookie 内容）
 accountsRouter.get("/", (_req: Request, res: Response) => {
@@ -49,7 +29,7 @@ accountsRouter.get("/", (_req: Request, res: Response) => {
 
 // GET /api/accounts/insights — 汇总所有账号的官方使用记录
 accountsRouter.get("/insights", async (req: Request, res: Response) => {
-  const result = await getCachedAllInsights(req.query.refresh === "true");
+  const result = await getAllAccountInsightsCached(req.query.refresh === "true");
   res.setHeader("Cache-Control", "no-store");
   res.json({ results: result.value, cached: result.cached, fetchedAt: result.fetchedAt });
 });
