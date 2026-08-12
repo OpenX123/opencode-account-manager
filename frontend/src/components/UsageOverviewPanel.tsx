@@ -37,11 +37,11 @@ export default function UsageOverviewPanel({ onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     setLoading(true);
     setError("");
     try {
-      setItems((await api.getAllAccountInsights()).results);
+      setItems((await api.getAllAccountInsights(refresh)).results);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -71,7 +71,7 @@ export default function UsageOverviewPanel({ onClose }: Props) {
             <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-paper-faint">OpenCode official usage.list</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void load()} disabled={loading} className="btn-icon" title="刷新全部记录">
+            <button onClick={() => void load(true)} disabled={loading} className="btn-icon" title="刷新全部记录">
               <IconRefresh width={17} height={17} className={loading ? "animate-spin-slow" : ""} />
             </button>
             <button onClick={onClose} className="btn-icon" aria-label="关闭"><IconClose width={18} height={18} /></button>
