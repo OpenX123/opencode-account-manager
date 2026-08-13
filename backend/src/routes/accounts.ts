@@ -14,7 +14,7 @@ import {
 } from "../services/account-store.js";
 import { parseCookies } from "../services/cookie-manager.js";
 import { verifyCookies } from "../services/browser-pool.js";
-import { getAccountInsights } from "../services/account-insights.js";
+import { getAccountInsights, getAllAccountInsightsCached } from "../services/account-insights.js";
 import { getApiKey } from "../services/api-key.js";
 import { encrypt } from "../utils/crypto.js";
 import type { Account, Cookie, CreateAccountInput } from "../types.js";
@@ -25,6 +25,13 @@ export const accountsRouter: RouterType = Router();
 accountsRouter.get("/", (_req: Request, res: Response) => {
   const accounts = getAllAccounts().map(sanitizeAccount);
   res.json(accounts);
+});
+
+// GET /api/accounts/insights — 汇总所有账号的官方使用记录
+accountsRouter.get("/insights", async (req: Request, res: Response) => {
+  const result = await getAllAccountInsightsCached(req.query.refresh === "true");
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ results: result.value, cached: result.cached, fetchedAt: result.fetchedAt });
 });
 
 // GET /api/accounts/:id/insights — 套餐、账单摘要和官方使用记录

@@ -146,6 +146,19 @@ export function getAccountInsights(id: string): Promise<AccountInsights> {
   });
 }
 
+export interface AccountInsightsBatchItem {
+  accountId: string;
+  alias: string;
+  insights?: AccountInsights;
+  error?: string;
+}
+
+export function getAllAccountInsights(refresh = false): Promise<{ results: AccountInsightsBatchItem[] }> {
+  return request<{ results: AccountInsightsBatchItem[] }>(`/accounts/insights${refresh ? "?refresh=true" : ""}`, {
+    signal: AbortSignal.timeout(120000),
+  });
+}
+
 export interface ApiKeyResult {
   accountId: string;
   alias: string;
@@ -290,6 +303,7 @@ export function checkUsage(accountId: string): Promise<UsageResult> {
 export function checkUsageBatch(): Promise<{ results: UsageResult[] }> {
   return request<{ results: UsageResult[] }>("/invite/usage-batch", {
     method: "POST",
+    signal: AbortSignal.timeout(60000),
   });
 }
 

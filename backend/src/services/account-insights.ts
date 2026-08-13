@@ -1,5 +1,6 @@
 import { decrypt } from "../utils/crypto.js";
-import { getAccountById } from "./account-store.js";
+import { createAsyncCache } from "../utils/async-cache.js";
+import { getAccountById, getAllAccounts } from "./account-store.js";
 import type { Account, Cookie } from "../types.js";
 
 const UA =
@@ -91,6 +92,13 @@ export interface AccountInsights {
   records: UsageRecord[];
 }
 
+export interface AccountInsightsBatchItem {
+  accountId: string;
+  alias: string;
+  insights?: AccountInsights;
+  error?: string;
+}
+
 interface RpcContext {
   account: Account;
   workspaceId: string;
@@ -157,6 +165,43 @@ export async function getAccountInsights(accountId: string): Promise<AccountInsi
     },
     summary: summarizeUsage(records),
     records,
+  };
+}
+
+export const getAllAccountInsightsCached = createAsyncCache(30_000, async () => {
+  // ponytail: all-account concurrency favors the 3s latency target; add a small pool only if official rate limits appear.
+  return Promise.all(getAllAccounts().map(async (account): Promise<AccountInsightsBatchItem> => {
+    try {
+      return {
+        accountId: account.id,
+        alias: account.alias,
+        insights: await getAccountInsights(account.id),
+      };
+    } catch (err) {
+      return {
+        accountId: account.id,
+        alias: account.alias,
+        error: (err as Error).message,
+      };
+    }
+  }));
+});
+
+export function accountInsightsToUsageResult(item: AccountInsightsBatchItem) {
+  if (!item.insights) {
+    return {
+      accountId: item.accountId,
+      alias: item.alias,
+      success: false,
+      message: `查询失败: ${item.error ?? "未知错误"}`,
+    };
+  }
+  return {
+    accountId: item.accountId,
+    alias: item.alias,
+    success: true,
+    message: "查询成功",
+    ...item.insights.windows,
   };
 }
 

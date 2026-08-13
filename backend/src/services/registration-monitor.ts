@@ -31,6 +31,8 @@ export function isOpenCodeUrl(value: string): boolean {
   return hostname === "opencode.ai" || hostname.endsWith(".opencode.ai");
 }
 
+export const GOOGLE_TERMS_ACCEPT_BUTTON_NAME = /^(?:我了解|I understand)$/;
+
 export interface RegistrationMonitor {
   id: string;
   inviteLink: string;
@@ -318,10 +320,8 @@ async function autoFillRegistrationForm(
         );
       });
       const understand = page
-        .locator(
-          'button:has(.VfPpkd-RLmnJb), button:has-text("我了解"), [role="button"]:has-text("我了解"), button:has-text("I understand"), [role="button"]:has-text("I understand")'
-        )
-        .last();
+        .getByRole("button", { name: GOOGLE_TERMS_ACCEPT_BUTTON_NAME })
+        .first();
       await understand.waitFor({ state: "visible", timeout: 15000 });
       await understand.scrollIntoViewIfNeeded();
       const termsUrl = page.url();

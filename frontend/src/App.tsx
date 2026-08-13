@@ -10,8 +10,9 @@ import CookieImporter from "./components/CookieImporter";
 import InviteChainPanel from "./components/InviteChainPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import OAuthLoginPanel from "./components/OAuthLoginPanel";
+import UsageOverviewPanel from "./components/UsageOverviewPanel";
 import { useAccounts } from "./hooks/useAccounts";
-import { IconKey } from "./components/icons";
+import { IconKey, IconRadar } from "./components/icons";
 import LoginScreen from "./components/LoginScreen";
 import { getAuthStatus } from "./api/client";
 
@@ -42,6 +43,7 @@ function AccountManager() {
   const [showOAuthLogin, setShowOAuthLogin] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showUsageOverview, setShowUsageOverview] = useState(false);
 
   const validCount = accounts.filter((a) => a.hasCookies).length;
   const invitedCount = accounts.filter((a) => a.invitedBy).length;
@@ -75,6 +77,10 @@ function AccountManager() {
               <span className="text-amber">{invitedCount}</span>
               <span className="text-paper-faint">个靠邀请注册</span>
             </span>
+            <button onClick={() => setShowUsageOverview(true)} className="btn-ghost ml-auto px-3 py-1.5 text-xs">
+              <IconRadar width={14} height={14} />
+              总使用记录
+            </button>
           </div>
         )}
 
@@ -130,6 +136,7 @@ function AccountManager() {
 
         {/* sub2api 配置面板 */}
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+        {showUsageOverview && <UsageOverviewPanel onClose={() => setShowUsageOverview(false)} />}
       </Layout>
     </ToastProvider>
   );
