@@ -13,6 +13,7 @@ import { browserRouter } from "./routes/browser.js";
 import { inviteRouter } from "./routes/invite.js";
 import { settingsRouter } from "./routes/settings.js";
 import { assertWebAuthConfig, authRouter, requireWebAuth } from "./routes/auth.js";
+import { startQuotaGuard } from "./services/quota-guard.js";
 
 export interface StartServerOptions {
   /** 监听端口，0 表示随机空闲端口 */
@@ -75,6 +76,7 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartedServe
   }
 
   const server = createServer(app);
+  const stopQuotaGuard = startQuotaGuard();
 
   return new Promise<StartedServer>((resolve) => {
     server.listen(port, () => {
@@ -84,8 +86,10 @@ export function startServer(opts: StartServerOptions = {}): Promise<StartedServe
       resolve({
         port: actualPort,
         server,
-        close: () =>
-          new Promise<void>((r) => server.close(() => r())),
+        close: () => {
+          stopQuotaGuard();
+          return new Promise<void>((r) => server.close(() => r()));
+        },
       });
     });
   });

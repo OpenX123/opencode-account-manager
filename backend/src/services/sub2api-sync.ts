@@ -104,6 +104,30 @@ async function findExistingByKey(apiKey: string, cfg: Sub2ApiSettings): Promise<
   return isNaN(id) ? null : id;
 }
 
+export async function findSub2ApiSchedulingAccount(accountId: string): Promise<{
+  id: number;
+  schedulable: boolean;
+} | null> {
+  const cfg = getSub2ApiSettings();
+  const { apiKey } = await getApiKey(accountId);
+  const escaped = apiKey.replace(/'/g, "''");
+  const result = await execSql(
+    `SELECT id, schedulable FROM accounts WHERE credentials->>'api_key' = '${escaped}' AND deleted_at IS NULL LIMIT 1;`,
+    cfg
+  );
+  const [id, schedulable] = result.trim().split("|");
+  const parsedId = Number.parseInt(id, 10);
+  return Number.isFinite(parsedId) ? { id: parsedId, schedulable: schedulable === "t" } : null;
+}
+
+export async function setSub2ApiSchedulable(id: number, schedulable: boolean): Promise<boolean> {
+  const result = await execSql(
+    `UPDATE accounts SET schedulable = ${schedulable}, updated_at = NOW() WHERE id = ${id} AND deleted_at IS NULL RETURNING id;`,
+    getSub2ApiSettings()
+  );
+  return result.trim() === String(id);
+}
+
 async function buildCredentials(apiKey: string, cfg: Sub2ApiSettings): Promise<string> {
   const modelMapping: Record<string, string> = {};
   try {
