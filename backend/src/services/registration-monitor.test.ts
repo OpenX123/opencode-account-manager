@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { isOpenCodeUrl } from "./registration-monitor.js";
+import {
+  GOOGLE_TERMS_ACCEPT_BUTTON_NAME,
+  isOpenCodeUrl,
+} from "./registration-monitor.js";
 import { dedupeAccounts } from "../routes/invite.js";
 
 assert.equal(isOpenCodeUrl("https://auth.opencode.ai/google/callback"), true);
@@ -9,6 +12,9 @@ assert.equal(
   ),
   false
 );
+assert.equal(GOOGLE_TERMS_ACCEPT_BUTTON_NAME.test("我了解"), true);
+assert.equal(GOOGLE_TERMS_ACCEPT_BUTTON_NAME.test("I understand"), true);
+assert.equal(GOOGLE_TERMS_ACCEPT_BUTTON_NAME.test("Scroll down"), false);
 
 assert.deepEqual(
   dedupeAccounts(
