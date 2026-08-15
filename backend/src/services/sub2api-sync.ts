@@ -157,7 +157,7 @@ async function updateExistingAccount(
   cfg: Sub2ApiSettings
 ): Promise<void> {
   const credentials = await buildCredentials(apiKey, cfg);
-  const sql = `UPDATE accounts SET platform = ${sqlString(cfg.platform)}, type = 'apikey', credentials = COALESCE(credentials, '{}'::jsonb) || ${sqlString(credentials)}::jsonb, concurrency = ${cfg.defaultConcurrency}, priority = ${cfg.defaultPriority}, status = 'active', schedulable = true, updated_at = NOW() WHERE id = ${accountId};`;
+  const sql = `UPDATE accounts SET platform = ${sqlString(cfg.platform)}, type = 'apikey', credentials = COALESCE(credentials, '{}'::jsonb) || ${sqlString(credentials)}::jsonb, concurrency = ${cfg.defaultConcurrency}, priority = ${cfg.defaultPriority}, updated_at = NOW() WHERE id = ${accountId};`;
   await execSql(sql, cfg);
 }
 
