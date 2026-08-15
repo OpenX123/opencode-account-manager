@@ -51,6 +51,21 @@ export function importAccount(input: {
   });
 }
 
+export interface MergeAccountsResult {
+  added: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export function mergeAccounts(accounts: unknown, sourceKey: string): Promise<MergeAccountsResult> {
+  return request<MergeAccountsResult>("/accounts/merge", {
+    method: "POST",
+    body: JSON.stringify({ accounts, sourceKey }),
+  });
+}
+
 export function deleteAccount(id: string): Promise<void> {
   return request(`/accounts/${id}`, { method: "DELETE" });
 }

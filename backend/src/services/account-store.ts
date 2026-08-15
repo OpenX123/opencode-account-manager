@@ -118,3 +118,8 @@ export function deleteAccount(id: string): void {
   accounts = list; // 更新内存缓存
   save();
 }
+
+export function replaceAccounts(next: Account[]): void {
+  accounts = [...next];
+  save();
+}

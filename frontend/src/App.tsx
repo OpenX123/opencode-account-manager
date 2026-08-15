@@ -11,8 +11,9 @@ import InviteChainPanel from "./components/InviteChainPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import OAuthLoginPanel from "./components/OAuthLoginPanel";
 import UsageOverviewPanel from "./components/UsageOverviewPanel";
+import AccountMergePanel from "./components/AccountMergePanel";
 import { useAccounts } from "./hooks/useAccounts";
-import { IconKey, IconRadar } from "./components/icons";
+import { IconKey, IconRadar, IconSync } from "./components/icons";
 import LoginScreen from "./components/LoginScreen";
 import { getAuthStatus } from "./api/client";
 
@@ -44,6 +45,7 @@ function AccountManager() {
   const [showInvite, setShowInvite] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showUsageOverview, setShowUsageOverview] = useState(false);
+  const [showAccountMerge, setShowAccountMerge] = useState(false);
 
   const validCount = accounts.filter((a) => a.hasCookies).length;
   const invitedCount = accounts.filter((a) => a.invitedBy).length;
@@ -77,10 +79,18 @@ function AccountManager() {
               <span className="text-amber">{invitedCount}</span>
               <span className="text-paper-faint">个靠邀请注册</span>
             </span>
-            <button onClick={() => setShowUsageOverview(true)} className="btn-ghost ml-auto px-3 py-1.5 text-xs">
-              <IconRadar width={14} height={14} />
-              总使用记录
-            </button>
+            <div className="ml-auto flex gap-2">
+              {webMode && (
+                <button onClick={() => setShowAccountMerge(true)} className="btn-ghost px-3 py-1.5 text-xs">
+                  <IconSync width={14} height={14} />
+                  合并本地账号
+                </button>
+              )}
+              <button onClick={() => setShowUsageOverview(true)} className="btn-ghost px-3 py-1.5 text-xs">
+                <IconRadar width={14} height={14} />
+                总使用记录
+              </button>
+            </div>
           </div>
         )}
 
@@ -137,6 +147,12 @@ function AccountManager() {
         {/* sub2api 配置面板 */}
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showUsageOverview && <UsageOverviewPanel onClose={() => setShowUsageOverview(false)} />}
+        {showAccountMerge && (
+          <AccountMergePanel
+            onClose={() => setShowAccountMerge(false)}
+            onMerged={refresh}
+          />
+        )}
       </Layout>
     </ToastProvider>
   );

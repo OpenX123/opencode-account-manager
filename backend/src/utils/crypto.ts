@@ -11,17 +11,20 @@ const IV_LENGTH = 16; // 128 bits
 const AUTH_TAG_LENGTH = 16; // 128 bits
 
 /** 获取加密密钥（从环境变量或生成默认值） */
+function deriveKey(raw: string): Buffer {
+  return crypto.scryptSync(raw, "opencode-salt", KEY_LENGTH);
+}
+
 function getKey(): Buffer {
   const raw = process.env.COOKIE_KEY;
   if (raw) {
-    // 从提供的字符串派生 256-bit 密钥
-    return crypto.scryptSync(raw, "opencode-salt", KEY_LENGTH);
+    return deriveKey(raw);
   }
   // 默认开发密钥（生产环境务必设置 COOKIE_KEY）
   console.warn(
     "⚠️  COOKIE_KEY 未设置，使用默认开发密钥。生产环境请设置环境变量 COOKIE_KEY。"
   );
-  return crypto.scryptSync("dev-key-change-me", "opencode-salt", KEY_LENGTH);
+  return deriveKey("dev-key-change-me");
 }
 
 const KEY = getKey();
@@ -64,4 +67,22 @@ export function decrypt(
   let decrypted = decipher.update(encrypted, "hex", "utf8");
   decrypted += decipher.final("utf8");
   return decrypted;
+}
+
+/** 使用另一台安装实例的密钥解密迁移数据。空值对应开发模式默认密钥。 */
+export function decryptWithSourceKey(
+  encrypted: string,
+  ivHex: string,
+  authTagHex: string,
+  sourceKey: string
+): string {
+  const iv = Buffer.from(ivHex, "hex");
+  const decipher = crypto.createDecipheriv(
+    ALGORITHM,
+    deriveKey(sourceKey || "dev-key-change-me"),
+    iv,
+    { authTagLength: AUTH_TAG_LENGTH }
+  );
+  decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
+  return decipher.update(encrypted, "hex", "utf8") + decipher.final("utf8");
 }

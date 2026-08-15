@@ -11,7 +11,9 @@ import {
   insertAccount,
   updateAccount,
   deleteAccount,
+  replaceAccounts,
 } from "../services/account-store.js";
+import { mergeAccountBackup } from "../services/account-merge.js";
 import { parseCookies } from "../services/cookie-manager.js";
 import { verifyCookies } from "../services/browser-pool.js";
 import { getAccountInsights, getAllAccountInsightsCached } from "../services/account-insights.js";
@@ -25,6 +27,31 @@ export const accountsRouter: RouterType = Router();
 accountsRouter.get("/", (_req: Request, res: Response) => {
   const accounts = getAllAccounts().map(sanitizeAccount);
   res.json(accounts);
+});
+
+// POST /api/accounts/merge — 合并另一台安装实例的 accounts.json
+accountsRouter.post("/merge", (req: Request, res: Response) => {
+  try {
+    const { accounts: source, sourceKey = "" } = req.body as {
+      accounts?: unknown;
+      sourceKey?: unknown;
+    };
+    if (typeof sourceKey !== "string" || sourceKey.length > 512) {
+      res.status(400).json({ error: "本地加密密钥无效" });
+      return;
+    }
+    const result = mergeAccountBackup(source, sourceKey, getAllAccounts());
+    if (result.added || result.updated) replaceAccounts(result.accounts);
+    res.json({
+      added: result.added,
+      updated: result.updated,
+      skipped: result.skipped,
+      failed: result.failed,
+      total: result.accounts.length,
+    });
+  } catch (err) {
+    res.status(400).json({ error: `合并失败: ${(err as Error).message}` });
+  }
 });
 
 // GET /api/accounts/insights — 汇总所有账号的官方使用记录
